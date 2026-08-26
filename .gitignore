@@ -1,3 +1,66 @@
-(js/app.js is a source file, so no need to ignore it)
+```gitignore
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 
-Nothing to add to .gitignore.
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Distribution / packaging
+dist/
+build/
+*.tar.gz
+*.whl
+*.egg
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Java/Maven/Gradle
+target/
+.gradle/
+
+# Python virtual environments
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Original rules preserved
+*.log
+```

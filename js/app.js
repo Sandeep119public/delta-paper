@@ -631,25 +631,30 @@ class DeltaPaperApp {
     
     if (!hits.length) return;
     
+    // ✅ FIXED: Batch updates
+    let positions = { ...S.positions };
+    let losses = S.losses;
+    let worst = S.worst;
+    let history = [...S.history];
+
     hits.forEach(k => {
-      const pos = S.positions[k];
-      const positions = { ...S.positions };
+      const pos = positions[k];
       delete positions[k];
       
-      const losses = S.losses + 1;
-      const worst = Math.min(S.worst, -pos.margin);
+      losses += 1;
+      worst = Math.min(worst, -pos.margin);
       
-      this.pushHist(k, '⚡ Liquidated', pos.qty, this.liqPrice(pos), -pos.margin);
-      const m = this.market.getMarket(k);
-      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
-      this.toast('LIQUIDATED', '⚡ ' + shortName + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
+      history.unshift({ t: Date.now(), sym: k, label: '⚡ Liquidated', qty: pos.qty, price: this.liqPrice(pos), pnl: -pos.margin });
+      if (history.length > 50) history.length = 50;
       
-      this.state.update({ positions, losses, worst });
+      this.toast('LIQUIDATED', '⚡ ' + this.market.getMarket(k).short + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
     });
     
+    // ✅ FIXED: Single state update for all liquidations in this tick
+    this.state.update({ positions, losses, worst, history });
     this.flushSave(true);
     
-    if (this.posDetailSym && !S.positions[this.posDetailSym]) {
+    if (this.posDetailSym && !this.state.get().positions[this.posDetailSym]) {
       this.posDetailSym = null;
       this.closeModal('posOverlay');
     }
@@ -696,10 +701,17 @@ class DeltaPaperApp {
     const pos = S.positions[sym];
     const m = this.market.getMarket(sym);
     
-    const shortName = this.config.SYM_META[sym] ? this.config.SYM_META[sym].short : sym;
     const t = this.$('pdTitle');
-    t.innerHTML = '<span class="side-tag ' + (pos.dir === 1 ? 'long' : 'short') + '">' + 
-      (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x</span> ' + shortName;
+    // ✅ FIXED: Safely construct the title
+    const sideTag = document.createElement('span');
+    sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
+    sideTag.textContent = (pos.dir === 1 ? 'LONG ' : 'SHORT ') + pos.lev + 'x';
+    
+    const symText = document.createTextNode(' ' + m.short);
+    
+    t.innerHTML = ''; // Clear existing
+    t.appendChild(sideTag);
+    t.appendChild(symText);
     
     this.$('pdEntry').textContent = this.fmtPrice(pos.entry, m.dec);
     this.$('pdQty').textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
@@ -1062,7 +1074,18 @@ class DeltaPaperApp {
     const container = this.$('toasts');
     const div = document.createElement('div');
     div.className = 'toast' + (type ? ' ' + type : '');
-    div.innerHTML = '<b>' + title + '</b><br><small>' + msg + '</small>';
+    
+    // ✅ FIXED: Create elements safely instead of using innerHTML
+    const titleEl = document.createElement('b');
+    titleEl.textContent = title;
+    
+    const msgEl = document.createElement('small');
+    msgEl.textContent = msg;
+    
+    div.appendChild(titleEl);
+    div.appendChild(document.createElement('br'));
+    div.appendChild(msgEl);
+    
     container.appendChild(div);
     setTimeout(() => div.remove(), 4000);
   }
@@ -1100,9 +1123,9 @@ class DeltaPaperApp {
     setInterval(() => {
       this.checkTPSL();
       this.checkLiquidations();
-      this.sampleEq();
-      // Removed flushSave from loop - only save on user actions to improve performance
-      this.markDirty();
+      // ✅ FIXED: Removed sampleEq() and flushSave() to prevent localStorage spam and UI jank.
+      // State is already saved automatically on discrete actions via this.state.update().
+      this.markDirty(); // Only re-render, do not spam save/equity sampling
     }, 1000);
   }
 
