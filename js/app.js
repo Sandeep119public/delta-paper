@@ -1110,6 +1110,7 @@ class DeltaPaperApp {
     this.renderEntry();
     this.renderPositions();
     this.renderPosDetailLive();
+    this.renderFeedStatus();
     this.renderHistory();
     this.renderFunds();
     this.renderMenu();
@@ -1117,6 +1118,27 @@ class DeltaPaperApp {
     if (this.$('cvtOverlay').classList.contains('show')) {
       this.renderCvtPreview();
     }
+  }
+
+  /**
+   * Render feed status indicators (SYNC/LIVE chips and dots)
+   */
+  renderFeedStatus() {
+    const st = this.market.getStats();
+    const markets = this.market.getAllMarkets();
+    const live = Object.values(markets).some(m => m.gotLive);
+    const fresh = st.lastUpdate && (Date.now() - st.lastUpdate < 10000);
+    const txt = !fresh ? 'Connecting…' : (st.sockets > 0 ? 'LIVE • WS' : 'LIVE • REST');
+    
+    const feedText = this.$('feedText');
+    const chipText = this.$('chipText');
+    const feedDot = this.$('feedDot');
+    const chipDot = this.$('chipDot');
+    
+    if (feedText) feedText.textContent = txt;
+    if (chipText) chipText.textContent = live ? 'LIVE' : 'SYNC…';
+    if (feedDot) feedDot.classList.toggle('on', !!fresh);
+    if (chipDot) chipDot.classList.toggle('on', live);
   }
 
   /**
