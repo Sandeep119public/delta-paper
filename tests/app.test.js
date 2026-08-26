@@ -16,7 +16,7 @@ global.document = {
   addEventListener: () => {},
   getElementById: () => null,
   querySelectorAll: () => [],
-  createElement: () => ({ click: () => {} })
+  createElement: () => ({ click: () => {}, textContent: '', innerHTML: '' })
 };
 
 global.navigator = {
@@ -27,9 +27,22 @@ global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 global.WebSocket = function() {};
 global.fetch = () => Promise.resolve({ ok: false, json: () => ({}) });
 
-// Load modules (in real browser these would be loaded via script tags)
+// Load modules using require for Node.js testing
 console.log('Delta Paper Trading - Test Suite');
 console.log('================================\n');
+
+// Load logger first (needed by other modules)
+const { DELTA_LOGGER } = require('../js/console.js');
+global.DELTA_LOGGER = DELTA_LOGGER;
+
+// Load config first
+const DELTA_CONFIG = require('../js/config.js');
+
+// Load validator
+const { InputValidator } = require('../js/validator.js');
+
+// Load state
+const { AppState } = require('../js/state.js');
 
 let passed = 0;
 let failed = 0;
@@ -96,8 +109,8 @@ test('InputValidator should validate lots correctly', () => {
   
   // Invalid input
   result = validator.validateLots('abc');
-  assert(result.isValid === true, 'Should auto-correct invalid');
-  assert(result.value === 1, 'Should default to minimum');
+  assert(result.isValid === false, 'Should reject invalid input');
+  assert(result.corrected === 1, 'Should suggest correction to minimum');
   
   // Empty input
   result = validator.validateLots('');

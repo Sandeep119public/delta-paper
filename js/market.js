@@ -38,7 +38,7 @@ class MarketDataManager {
     // Start REST polling as backup (3 second interval)
     setInterval(() => this.restPoll(), 3000);
 
-    console.log('[Market] Initialized with', Object.keys(this.markets).length, 'symbols');
+    DELTA_LOGGER.log('[Market] Initialized with', Object.keys(this.markets).length, 'symbols');
   }
 
   /**
@@ -138,10 +138,10 @@ class MarketDataManager {
             }
           }
         });
-        console.log('[Market] ✓ Lot sizes updated:', this.config.LOT_SIZES);
+        DELTA_LOGGER.log('[Market] ✓ Lot sizes updated:', this.config.LOT_SIZES);
       }
     } catch (e) {
-      console.warn('[Market] ✗ Lot fetch failed, using defaults:', e.message);
+      DELTA_LOGGER.warn('[Market] ✗ Lot fetch failed, using defaults:', e.message);
     }
   }
 
@@ -153,10 +153,10 @@ class MarketDataManager {
       const tickers = await this.apiGet('/v2/tickers?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(','));
       if (Array.isArray(tickers) && tickers.length) {
         this.buildMarketsFromTickers(tickers);
-        console.log('[Market] ✓ Bootstrapped via REST - got', tickers.length, 'tickers');
+        DELTA_LOGGER.log('[Market] ✓ Bootstrapped via REST - got', tickers.length, 'tickers');
       }
     } catch (e) {
-      console.warn('[Market] ✗ REST boot failed:', e.message);
+      DELTA_LOGGER.warn('[Market] ✗ REST boot failed:', e.message);
       // Fallback: set simulated prices based on config BASE_RATE
       this.config.SYMBOLS.forEach(sym => {
         if (!this.markets[sym].price) {
@@ -222,7 +222,7 @@ class MarketDataManager {
     try {
       ws = new WebSocket(url);
     } catch (e) {
-      console.warn('[Market] WS connection failed:', url, e.message);
+      DELTA_LOGGER.warn('[Market] WS connection failed:', url, e.message);
       this.scheduleReconnect(url);
       return;
     }
@@ -231,7 +231,7 @@ class MarketDataManager {
     this.sockets.push(sock);
 
     ws.onopen = () => {
-      console.log('[Market] WS connected:', url);
+      DELTA_LOGGER.log('[Market] WS connected:', url);
       this.sendSubscriptions(sock);
 
       // Heartbeat to keep connection alive
@@ -264,7 +264,7 @@ class MarketDataManager {
     };
 
     ws.onerror = (e) => {
-      console.warn('[Market] WS error:', url, e);
+      DELTA_LOGGER.warn('[Market] WS error:', url, e);
       try { ws.close(); } catch (e) {}
     };
   }
@@ -329,9 +329,9 @@ class MarketDataManager {
         }
       }));
 
-      console.log('[Market] Subscribed to:', this.config.SYMBOLS.join(', '));
+      DELTA_LOGGER.log('[Market] Subscribed to:', this.config.SYMBOLS.join(', '));
     } catch (e) {
-      console.warn('[Market] Subscription failed:', e.message);
+      DELTA_LOGGER.warn('[Market] Subscription failed:', e.message);
     }
   }
 
@@ -458,7 +458,7 @@ class MarketDataManager {
 
         return j.result || j;
       } catch (e) {
-        console.warn('[Market] API attempt', i+1, 'failed:', e.message);
+        DELTA_LOGGER.warn('[Market] API attempt', i+1, 'failed:', e.message);
         lastErr = e;
       }
     }

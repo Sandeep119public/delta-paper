@@ -6,7 +6,7 @@
 (function() {
   'use strict';
 
-  console.log('[Boot] Starting Delta Paper Trading...');
+  DELTA_LOGGER.log('[Boot] Starting Delta Paper Trading...');
 
   // Initialize modules in order
   const config = DELTA_CONFIG;
@@ -29,7 +29,7 @@
   
   // Initialize market data first (fetches live prices from Delta Exchange India)
   marketManager.init().then(() => {
-    console.log('[Boot] Market data initialized');
+    DELTA_LOGGER.log('[Boot] Market data initialized');
     
     // Then initialize the app
     app.init();
@@ -37,13 +37,13 @@
     // Register service worker for PWA
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js')
-        .then(r => console.log('[Boot] Service Worker registered'))
-        .catch(e => console.error('[Boot] Service Worker failed', e));
+        .then(r => DELTA_LOGGER.log('[Boot] Service Worker registered'))
+        .catch(e => DELTA_LOGGER.error('[Boot] Service Worker failed', e));
     }
     
-    console.log('[Boot] Application ready');
+    DELTA_LOGGER.log('[Boot] Application ready');
   }).catch(err => {
-    console.error('[Boot] Initialization failed:', err);
+    DELTA_LOGGER.error('[Boot] Initialization failed:', err);
     // Still try to init app even if market data fails (will use simulation)
     app.init();
   });
