@@ -47,15 +47,15 @@ class AppState {
         // Validate and merge with defaults
         this.state = { ...this.createDefault(), ...parsed };
         this.migrateState();
-        console.log('[State] Loaded from storage');
+        DELTA_LOGGER.log('[State] Loaded from storage');
       } else {
         this.state = this.createDefault();
-        console.log('[State] Created default state');
+        DELTA_LOGGER.log('[State] Created default state');
       }
       this.save();
       return this.state;
     } catch (e) {
-      console.error('[State] Load failed:', e);
+      DELTA_LOGGER.error('[State] Load failed:', e);
       this.state = this.createDefault();
       this.save();
       return this.state;
@@ -71,7 +71,7 @@ class AppState {
       this.state.lastSeen = Date.now();
       localStorage.setItem(this.config.STORE_KEY, JSON.stringify(this.state));
     } catch (e) {
-      console.error('[State] Save failed:', e);
+      DELTA_LOGGER.error('[State] Save failed:', e);
       throw new Error('Failed to save state. Storage may be full.');
     }
   }
@@ -91,7 +91,7 @@ class AppState {
     this.state = this.createDefault();
     this.save();
     this.notifyListeners();
-    console.log('[State] Reset to defaults');
+    DELTA_LOGGER.log('[State] Reset to defaults');
   }
 
   /**
@@ -186,7 +186,7 @@ class AppState {
       try {
         listener(this.state);
       } catch (e) {
-        console.error('[State] Listener error:', e);
+        DELTA_LOGGER.error('[State] Listener error:', e);
       }
     });
   }

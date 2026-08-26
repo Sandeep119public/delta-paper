@@ -34,7 +34,7 @@ class DeltaPaperApp {
    * Initialize the application
    */
   async init() {
-    console.log('[App] Initializing...');
+    DELTA_LOGGER.log('[App] Initializing...');
     
     // Subscribe to market data updates
     this.market.subscribe(() => this.markDirty());
@@ -53,7 +53,7 @@ class DeltaPaperApp {
     // Start simulation loop
     this.startSimulationLoop();
     
-    console.log('[App] Initialized successfully');
+    DELTA_LOGGER.log('[App] Initialized successfully');
   }
 
   /**
