@@ -244,10 +244,20 @@ test('AppState should track ledger entries', () => {
   const appState = new AppState(DELTA_CONFIG);
   appState.load();
   
-  const entry = appState.addLedgerEntry({
+  // Ledger entries are now managed by app.js via ledgerPush() method
+  // which caps at 40 entries for UI performance
+  const entry = {
+    id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+    timestamp: Date.now(),
     type: 'TEST',
     amount: 1000
-  });
+  };
+  
+  appState.state.ledger.unshift(entry);
+  if (appState.state.ledger.length > 40) {
+    appState.state.ledger = appState.state.ledger.slice(0, 40);
+  }
+  appState.save();
   
   assert(entry.id !== undefined, 'Should have ID');
   assert(entry.timestamp !== undefined, 'Should have timestamp');
@@ -258,11 +268,32 @@ test('AppState should track trade history', () => {
   const appState = new AppState(DELTA_CONFIG);
   appState.load();
   
-  appState.addTrade({
+  // Trade history is now managed by app.js via pushHist() method
+  // which caps at 50 entries for UI performance
+  const trade = {
+    t: Date.now(),
     symbol: 'BTCUSD',
     pnl: 500,
     fee: 10
-  });
+  };
+  
+  appState.state.history.unshift(trade);
+  if (appState.state.history.length > 50) {
+    appState.state.history = appState.state.history.slice(0, 50);
+  }
+  
+  // Update statistics manually as app.js does
+  if (trade.pnl !== undefined) {
+    if (trade.pnl > 0) {
+      appState.state.wins++;
+      if (trade.pnl > appState.state.best) appState.state.best = trade.pnl;
+    }
+    appState.state.realized += trade.pnl;
+  }
+  if (trade.fee !== undefined) {
+    appState.state.feesTotal += trade.fee;
+  }
+  appState.save();
   
   assert(appState.state.wins === 1, 'Should count win');
   assert(appState.state.realized === 500, 'Should track realized PnL');

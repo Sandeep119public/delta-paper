@@ -1095,7 +1095,7 @@ class DeltaPaperApp {
       this.checkTPSL();
       this.checkLiquidations();
       this.sampleEq();
-      this.flushSave(false);
+      // Removed flushSave from loop - only save on user actions to improve performance
       this.markDirty();
     }, 1000);
   }
