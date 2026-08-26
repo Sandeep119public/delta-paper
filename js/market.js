@@ -294,41 +294,21 @@ class MarketDataManager {
     if (!w || w.readyState !== 1) return;
 
     try {
-      // Subscribe to individual ticker channels for each symbol
-      this.config.SYMBOLS.forEach(sym => {
-        // Format 1: Individual ticker subscription
-        w.send(JSON.stringify({
-          type: 'subscribe',
-          payload: {
-            channels: [{ name: 'ticker:' + sym }]
-          }
-        }));
-        
-        // Format 2: Alternative channel format (orderbook)
-        w.send(JSON.stringify({
-          type: 'subscribe',
-          payload: {
-            channels: [{ name: 'l2_' + sym }]
-          }
-        }));
-
-        // Format 3: Trade stream
-        w.send(JSON.stringify({
-          type: 'subscribe',
-          payload: {
-            channels: [{ name: 'trade:' + sym }]
-          }
-        }));
-      });
-
-      // Also try bulk subscription
+      // Single bulk subscription with proper channel format per Delta docs
       w.send(JSON.stringify({
         type: 'subscribe',
         payload: {
-          channels: this.config.SYMBOLS.map(sym => ({ name: 'ticker:' + sym }))
+          channels: [
+            { name: 'ticker', symbols: this.config.SYMBOLS },
+            { name: 'trades', symbols: this.config.SYMBOLS },
+            { name: 'mark_price', symbols: this.config.SYMBOLS.map(s => 'MARK:' + s) }
+          ]
         }
       }));
-
+      
+      // Enable heartbeat
+      w.send(JSON.stringify({ type: 'enable_heartbeat' }));
+      
       DELTA_LOGGER.log('[Market] Subscribed to:', this.config.SYMBOLS.join(', '));
     } catch (e) {
       DELTA_LOGGER.warn('[Market] Subscription failed:', e.message);
@@ -347,6 +327,38 @@ class MarketDataManager {
     }
 
     sock.hadData = true;
+
+    // Format: trades channel - {type:'trades', sy:'BTCUSD', p:'78600.5'}
+    if (tp === 'trades' && msg.sy && msg.p) {
+      this.applyTickerObj({ symbol: msg.sy, last_price: msg.p, close: msg.p });
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
+
+    // Format: mark_price channel - {type:'mark_price', sy:'MARK:BTCUSD', p:'...'}
+    if (tp === 'mark_price' && msg.sy && msg.p) {
+      const sym = msg.sy.replace('MARK:', '');
+      this.applyTickerObj({ symbol: sym, mark_price: msg.p });
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
+
+    // Format: ticker channel with data array - {type:'ticker', sy:'BTCUSD', d:[{m: price}]}
+    if (tp === 'ticker' && msg.sy && Array.isArray(msg.d)) {
+      const sym = msg.sy;
+      if (this.markets[sym] && msg.d.length > 0) {
+        const d = msg.d[0];
+        const mark = parseFloat(d.m);
+        if (isFinite(mark) && mark > 0) {
+          this.applyTickerObj({ symbol: sym, mark_price: mark });
+        }
+      }
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
 
     // Format 1: Channel-based ticker (ticker:SYMBOL)
     if (msg.channel && typeof msg.channel === 'string' && msg.channel.startsWith('ticker:')) {

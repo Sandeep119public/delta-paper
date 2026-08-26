@@ -19,7 +19,7 @@
   const marketManager = new MarketDataManager(config);
   
   // Create validator
-  const validator = new Validator(config, stateManager);
+  const validator = new InputValidator(config);
   
   // Create main app
   const app = new DeltaPaperApp(config, stateManager, validator, marketManager);
@@ -27,25 +27,20 @@
   // Make app globally available for legacy compatibility
   window.app = app;
   
-  // Initialize market data first (fetches live prices from Delta Exchange India)
-  marketManager.init().then(() => {
-    DELTA_LOGGER.log('[Boot] Market data initialized');
-    
-    // Then initialize the app
-    app.init();
-    
-    // Register service worker for PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js')
-        .then(r => DELTA_LOGGER.log('[Boot] Service Worker registered'))
-        .catch(e => DELTA_LOGGER.error('[Boot] Service Worker failed', e));
-    }
-    
-    DELTA_LOGGER.log('[Boot] Application ready');
-  }).catch(err => {
-    DELTA_LOGGER.error('[Boot] Initialization failed:', err);
-    // Still try to init app even if market data fails (will use simulation)
-    app.init();
-  });
-
+  // Initialize app immediately (UI renders first, market data streams in afterwards)
+  app.init();
+  
+  // Initialize market data asynchronously (non-blocking)
+  marketManager.init()
+    .then(() => DELTA_LOGGER.log('[Boot] Market data initialized'))
+    .catch(e => DELTA_LOGGER.error('[Boot] market init failed', e));
+  
+  // Register service worker for PWA
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(r => DELTA_LOGGER.log('[Boot] Service Worker registered'))
+      .catch(e => DELTA_LOGGER.error('[Boot] Service Worker failed', e));
+  }
+  
+  DELTA_LOGGER.log('[Boot] Application ready');
 })();

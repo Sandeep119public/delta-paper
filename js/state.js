@@ -32,7 +32,8 @@ class AppState {
       feesTotal: 0,
       best: 0,
       worst: 0,
-      lastSeen: Date.now()
+      lastSeen: Date.now(),
+      equityCurve: []
     };
   }
 
@@ -200,12 +201,13 @@ class AppState {
   }
 
   /**
-   * Get specific state property
-   * @param {string} key - Property name
-   * @returns {*} Property value
+   * Get specific state property or entire state if no key provided
+   * @param {string} [key] - Property name (optional)
+   * @returns {*} Property value or entire state
    */
   get(key) {
-    return this.state ? this.state[key] : undefined;
+    if (!this.state) return undefined;
+    return key === undefined ? this.state : this.state[key];
   }
 }
 

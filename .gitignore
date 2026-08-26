@@ -1,1 +1,1 @@
-(js/app.js, js/state.js, tests/app.test.js are source files, no build artifacts, dependencies, or temp files detected)
+(js/app.js, js/boot.js, js/config.js, js/market.js, js/state.js, sw.js)
