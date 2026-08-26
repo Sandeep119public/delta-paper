@@ -15,11 +15,10 @@ const DELTA_CONFIG = {
   ],
 
   // CORS Proxy fallback chain for REST API only (WebSocket bypasses these)
+  // Note: Most public CORS proxies don't work with Delta India API
+  // Direct browser access may still face CORS restrictions
   PROXY_CHAIN: [
-    u => u, // Direct connection (try first)
-    u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
-    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
-    u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)
+    u => u // Direct connection only - proxies return HTML errors
   ],
 
   // Trading Symbols - Delta India perpetual contracts
