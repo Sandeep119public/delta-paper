@@ -1,5 +1,20 @@
 const CACHE = 'delta-paper-v2';
-const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
+const ASSETS = [
+  './', 
+  './index.html', 
+  './manifest.json',
+  './css/styles.css',
+  './js/config.js', 
+  './js/console.js', 
+  './js/market.js',
+  './js/state.js', 
+  './js/validator.js', 
+  './js/app.js', 
+  './js/boot.js',
+  './icons/icon-192.png', 
+  './icons/icon-512.png', 
+  './icons/maskable-512.png'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

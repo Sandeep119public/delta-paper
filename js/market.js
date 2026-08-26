@@ -454,7 +454,10 @@ class MarketDataManager {
       try {
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), 8000);
-        const r = await fetch(this.config.PROXY_CHAIN[i](url), { signal: ctrl.signal });
+        
+        // ✅ FIXED: Correctly evaluate the proxy function for the current index
+        const targetUrl = this.config.PROXY_CHAIN[i](url);
+        const r = await fetch(targetUrl, { signal: ctrl.signal });
         clearTimeout(to);
 
         if (!r.ok) {
