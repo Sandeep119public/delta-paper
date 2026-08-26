@@ -207,65 +207,6 @@ class AppState {
   get(key) {
     return this.state ? this.state[key] : undefined;
   }
-
-  /**
-   * Add transaction to ledger
-   * @param {Object} tx - Transaction object
-   */
-  addLedgerEntry(tx) {
-    if (!this.state) throw new Error('State not initialized');
-    
-    const entry = {
-      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
-      ...tx
-    };
-
-    this.state.ledger.unshift(entry);
-    
-    // Keep only last 1000 entries
-    if (this.state.ledger.length > 1000) {
-      this.state.ledger = this.state.ledger.slice(0, 1000);
-    }
-    
-    this.save();
-    this.notifyListeners();
-    return entry;
-  }
-
-  /**
-   * Add trade to history
-   * @param {Object} trade - Trade object
-   */
-  addTrade(trade) {
-    if (!this.state) throw new Error('State not initialized');
-    
-    this.state.history.unshift(trade);
-    
-    // Update statistics
-    if (trade.pnl !== undefined) {
-      if (trade.pnl > 0) {
-        this.state.wins++;
-        if (trade.pnl > this.state.best) this.state.best = trade.pnl;
-      } else if (trade.pnl < 0) {
-        this.state.losses++;
-        if (trade.pnl < this.state.worst) this.state.worst = trade.pnl;
-      }
-      this.state.realized += trade.pnl;
-    }
-    
-    if (trade.fee !== undefined) {
-      this.state.feesTotal += trade.fee;
-    }
-    
-    // Keep only last 500 trades
-    if (this.state.history.length > 500) {
-      this.state.history = this.state.history.slice(0, 500);
-    }
-    
-    this.save();
-    this.notifyListeners();
-  }
 }
 
 // Export for module systems
