@@ -281,7 +281,8 @@ class DeltaPaperApp {
     const fee = pos.qty * fill * this.config.TAKER_FEE;
     
     this.applyFill(sym, -pos.dir, fill, pos.qty, pos.lev, fee, pos.lots);
-    this.toast('Closed', m.short + ' @ ' + this.fmtPrice(fill, m.dec), 'ok');
+    const shortName = this.config.SYM_META[sym] ? this.config.SYM_META[sym].short : sym;
+    this.toast('Closed', shortName + ' @ ' + this.fmtPrice(fill, m.dec), 'ok');
     this.flushSave(true);
     this.markDirty();
   }
@@ -418,10 +419,11 @@ class DeltaPaperApp {
     }
     
     if (this.applyFill(this.selSym, side, fill, qty, lev, fee, lots)) {
+      const shortName = this.config.SYM_META[this.selSym] ? this.config.SYM_META[this.selSym].short : this.selSym;
       this.toast(
         'Filled ✓',
         (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') + 
-        ' (' + this.fmtQty(qty) + ' ' + m.short + ') @ ' + this.fmtPrice(fill, m.dec),
+        ' (' + this.fmtQty(qty) + ' ' + shortName + ') @ ' + this.fmtPrice(fill, m.dec),
         'ok'
       );
       this.flushSave(true);
@@ -638,7 +640,9 @@ class DeltaPaperApp {
       const worst = Math.min(S.worst, -pos.margin);
       
       this.pushHist(k, '⚡ Liquidated', pos.qty, this.liqPrice(pos), -pos.margin);
-      this.toast('LIQUIDATED', '⚡ ' + this.market.getMarket(k).short + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
+      const m = this.market.getMarket(k);
+      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
+      this.toast('LIQUIDATED', '⚡ ' + shortName + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
       
       this.state.update({ positions, losses, worst });
     });
@@ -676,7 +680,8 @@ class DeltaPaperApp {
       this.state.update({ history });
     }
     
-    this.toast(label, m.short + ' closed @ ' + this.fmtPrice(price, m.dec), label === 'TP hit' ? 'ok' : 'err');
+    const shortName = this.config.SYM_META[pos.sym] ? this.config.SYM_META[pos.sym].short : pos.sym;
+    this.toast(label, shortName + ' closed @ ' + this.fmtPrice(price, m.dec), label === 'TP hit' ? 'ok' : 'err');
     this.flushSave(true);
   }
 
@@ -691,9 +696,10 @@ class DeltaPaperApp {
     const pos = S.positions[sym];
     const m = this.market.getMarket(sym);
     
+    const shortName = this.config.SYM_META[sym] ? this.config.SYM_META[sym].short : sym;
     const t = this.$('pdTitle');
     t.innerHTML = '<span class="side-tag ' + (pos.dir === 1 ? 'long' : 'short') + '">' + 
-      (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x</span> ' + m.short;
+      (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x</span> ' + shortName;
     
     this.$('pdEntry').textContent = this.fmtPrice(pos.entry, m.dec);
     this.$('pdQty').textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
@@ -1263,6 +1269,7 @@ class DeltaPaperApp {
     keys.forEach(k => {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
+      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
       
       const card = document.createElement('div');
       card.className = 'pos-card';
@@ -1278,7 +1285,7 @@ class DeltaPaperApp {
         '<div class="pc-row1">' +
           '<span class="side-tag ' + (pos.dir === 1 ? 'long' : 'short') + '">' + 
             (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x</span>' +
-          '<span class="pc-sym">' + m.short + '</span>' +
+          '<span class="pc-sym">' + shortName + '</span>' +
           '<span class="pc-qty">' + pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty) + '</span>' +
           '<span class="pc-upnl">—</span>' +
         '</div>' +
