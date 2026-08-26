@@ -1,10 +1,10 @@
 <!--
-  Δ DELTA PAPER — MOBILE v7 (One-tap trading screen)
-  Main screen = Balance + Symbol price + BUY/SELL entry buttons + Positions only.
-  • Tap a position → detail sheet to set/edit TP & SL, or close it
-  • Margin & leverage live in the ☰ Menu sheet
-  • Funds, History, Account, Reset all moved into ☰ Menu
-  • Live Delta India data, rAF-batched rendering, cached refs
+  Δ DELTA PAPER — MOBILE v9 (Lot-based sizing)
+  Quantity = number of CONTRACTS (lots), matching Delta Exchange India:
+    BTCUSD lot = 0.001 BTC • ETHUSD lot = 0.01 ETH • SOLUSD lot = 1 SOL
+  Notional = lots × lot × mark price. Lot sizes fetched live from /v2/products.
+  Main screen: Balance • BTC/ETH/SOL • Lot stepper • BUY/SELL • Positions.
+  Tap position → TP/SL sheet. Everything else in ☰ Menu.
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -80,7 +80,9 @@ header.top{
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
 .panel-h{display:flex;align-items:center;justify-content:space-between;padding:11px 14px 7px}
 .panel-h h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.panel-h h3 em{font-style:normal;font-size:9.5px;color:var(--dim);font-weight:600;font-family:var(--mono)}
 .panel-h .rt{font-size:10px;color:var(--dim);font-family:var(--mono)}
+.panel-h .rt.tap{color:var(--accent);cursor:pointer;font-weight:700}
 .feed-mini{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
 .cnt{font-family:var(--mono);font-size:9px;background:#1b2a41;border-radius:9px;padding:1px 7px;color:var(--accent)}
 
@@ -99,16 +101,39 @@ header.top{
 .ps-chg.dn{color:var(--red);background:var(--red-bg)}
 .ps-fund{margin-left:auto;font-size:9.5px;color:var(--dim);font-family:var(--mono)}
 
+/* ---------- Quantity (lots) ---------- */
+.qty-wrap{padding:2px 14px 13px}
+.qty-row{display:grid;grid-template-columns:54px 1fr 54px;gap:8px;align-items:stretch}
+.step-btn{
+  border-radius:12px;border:1px solid var(--border2);background:#16202f;color:var(--text);
+  font-size:24px;font-weight:700;cursor:pointer;min-height:52px;line-height:1;transition:transform .1s;
+}
+.step-btn:active{transform:scale(.94);border-color:var(--accent);color:var(--accent)}
+.qty-input-wrap{position:relative;display:flex;align-items:center}
+.qty-input-wrap input{
+  width:100%;background:#0b111c;border:1px solid var(--border2);border-radius:12px;color:var(--text);
+  font-family:var(--mono);font-size:20px;font-weight:700;padding:12px 62px 12px 13px;outline:none;text-align:left;
+}
+.qty-input-wrap input:focus{border-color:var(--accent)}
+.qty-unit{position:absolute;right:13px;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:800;pointer-events:none;letter-spacing:.5px}
+.qk{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.qk button{
+  padding:9px 4px;font-size:11px;font-family:var(--mono);border-radius:9px;cursor:pointer;
+  background:#16202f;border:1px solid var(--border);color:var(--muted);
+}
+.qk button:active{transform:scale(.96);border-color:var(--accent);color:var(--text)}
+.qty-info{font-family:var(--mono);font-size:10px;color:var(--dim);text-align:center;margin-top:8px;min-height:13px}
+
 /* ---------- Entry buttons ---------- */
 .entry-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .entry-btn{
   display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding:17px 6px;border-radius:15px;border:none;cursor:pointer;
+  padding:16px 6px;border-radius:15px;border:none;cursor:pointer;
   font-weight:800;transition:transform .1s;box-shadow:0 6px 18px rgba(0,0,0,.28);
 }
 .entry-btn:active{transform:scale(.96)}
 .entry-btn .el{font-size:15px;letter-spacing:.6px}
-.entry-btn small{font-family:var(--mono);font-size:10px;font-weight:600;opacity:.8}
+.entry-btn small{font-family:var(--mono);font-size:10px;font-weight:600;opacity:.85}
 .entry-btn.buy{background:var(--green);color:#04120c}
 .entry-btn.sell{background:var(--red);color:#fff}
 .conv-hint{
@@ -130,7 +155,7 @@ header.top{
 .side-tag.long{color:var(--green);background:var(--green-bg)}
 .side-tag.short{color:var(--red);background:var(--red-bg)}
 .pc-sym{font-weight:800;font-size:13.5px}
-.pc-qty{font-size:10.5px;color:var(--muted)}
+.pc-qty{font-size:10px;color:var(--muted);font-family:var(--mono)}
 .pc-upnl{margin-left:auto;font-family:var(--mono);font-size:12.5px;font-weight:700;text-align:right}
 .pc-row2{
   display:flex;align-items:center;gap:12px;margin-top:6px;
@@ -179,12 +204,6 @@ footer{text-align:center;color:var(--dim);font-size:9.5px;line-height:1.6;paddin
   color:var(--text);font-family:var(--mono);font-size:16px;padding:11px 12px;outline:none;
 }
 .fld input:focus{border-color:var(--accent)}
-.qk{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:7px}
-.qk button{
-  padding:8px 4px;font-size:11px;font-family:var(--mono);border-radius:9px;cursor:pointer;
-  background:#16202f;border:1px solid var(--border);color:var(--muted);
-}
-.qk button:active{transform:scale(.96);border-color:var(--accent);color:var(--text)}
 input[type=range]{width:100%;height:32px;accent-color:var(--accent);cursor:pointer}
 .menu-list{display:flex;flex-direction:column;gap:8px}
 .menu-list button{
@@ -200,7 +219,7 @@ input[type=range]{width:100%;height:32px;accent-color:var(--accent);cursor:point
 .pd-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .pd-stat{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:9px 10px;min-width:0}
 .pd-stat span{font-size:8px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;display:block}
-.pd-stat b{display:block;font-family:var(--mono);font-size:12.5px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-stat b{display:block;font-family:var(--mono);font-size:12px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tpsl{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tpsl .fld.tp label{color:var(--green)}
 .tpsl .fld.sl label{color:var(--red)}
@@ -366,6 +385,30 @@ td.sym-c{font-family:var(--sans);font-weight:700;font-size:12px}
   </div>
 </section>
 
+<section class="panel">
+  <div class="panel-h">
+    <h3>Quantity <em id="lotLabel">1 lot = 0.001 BTC</em></h3>
+    <span class="rt tap" id="qtyLevRt">10x ⚙</span>
+  </div>
+  <div class="qty-wrap">
+    <div class="qty-row">
+      <button class="step-btn" id="qtyMinus">−</button>
+      <div class="qty-input-wrap">
+        <input type="number" id="qtyIn" step="1" inputmode="numeric" min="1" placeholder="1">
+        <span class="qty-unit">LOTS</span>
+      </div>
+      <button class="step-btn" id="qtyPlus">+</button>
+    </div>
+    <div class="qk">
+      <button data-q="25">$25</button>
+      <button data-q="50">$50</button>
+      <button data-q="100">$100</button>
+      <button data-q="max">Max</button>
+    </div>
+    <div class="qty-info" id="qtyInfo">—</div>
+  </div>
+</section>
+
 <div class="entry-grid">
   <button id="buyBtn" class="entry-btn buy"><span class="el">BUY / LONG</span><small id="buySub">—</small></button>
   <button id="sellBtn" class="entry-btn sell"><span class="el">SELL / SHORT</span><small id="sellSub">—</small></button>
@@ -386,8 +429,8 @@ td.sym-c{font-family:var(--sans);font-weight:700;font-size:12px}
 </section>
 
 <footer>
-  Live data: <b>Delta Exchange India</b> public API • Trades are 100% simulated paper orders.<br>
-  Not affiliated with Delta Exchange. Not investment advice.
+  Live data: <b>Delta Exchange India</b> public API • Lot sizes from official contract specs.<br>
+  Trades are 100% simulated paper orders. Not affiliated with Delta Exchange.
 </footer>
 
 </div>
@@ -397,15 +440,7 @@ td.sym-c{font-family:var(--sans);font-weight:700;font-size:12px}
   <div class="modal">
     <div class="modal-h"><h3>☰ Menu</h3><button class="x-btn" data-close-m="menuOverlay">✕</button></div>
     <div class="modal-b">
-      <div class="sub-h">Trade Size (one-tap orders use this)</div>
-      <div class="fld">
-        <label>Margin per trade (USD)</label>
-        <input type="number" id="sizeIn" step="any" inputmode="decimal" min="5" value="100">
-        <div class="qk">
-          <button data-s="50">$50</button><button data-s="100">$100</button>
-          <button data-s="250">$250</button><button data-s="max">Max</button>
-        </div>
-      </div>
+      <div class="sub-h">Leverage (used by entry buttons)</div>
       <div class="fld">
         <label>Leverage <b id="levVal">10x</b></label>
         <input type="range" id="levRange" min="1" max="50" value="10">
@@ -431,7 +466,7 @@ td.sym-c{font-family:var(--sans);font-weight:700;font-size:12px}
         <div class="pd-stat"><span>Entry</span><b id="pdEntry">—</b></div>
         <div class="pd-stat"><span>Mark</span><b id="pdMark">—</b></div>
         <div class="pd-stat"><span>uPnL</span><b id="pdUpnl">—</b></div>
-        <div class="pd-stat"><span>Qty</span><b id="pdQty">—</b></div>
+        <div class="pd-stat"><span>Size</span><b id="pdQty">—</b></div>
         <div class="pd-stat"><span>Margin</span><b id="pdMargin">—</b></div>
         <div class="pd-stat"><span>Liq. Price</span><b id="pdLiq" class="neg">—</b></div>
       </div>
@@ -663,15 +698,17 @@ const SYM_META={
   ETHUSD:{name:'Ethereum',short:'ETH'},
   SOLUSD:{name:'Solana',short:'SOL'},
 };
+/* Official Delta India lot sizes (coins per 1 contract); refreshed live from /v2/products */
+const LOT_SIZES={BTCUSD:0.001,ETHUSD:0.01,SOLUSD:1};
 const START_INR=866000, BASE_RATE=86.6, CONVERT_FEE=0.001, TAKER_FEE=0.0005;
-const STORE_KEY='deltaPaper.mob.v3';
+const STORE_KEY='deltaPaper.mob.v5';
 
 /* ================= STATE ================= */
 function DEFAULTS(){
   return {
     name:'Trader', uid:'DE-IN-'+(10000000+Math.floor(Math.random()*89999999)), createdAt:Date.now(),
     inr:START_INR, usd:0,
-    margin:100, lev:10,
+    lev:10, lots:{},
     positions:{}, history:[], ledger:[],
     realized:0, wins:0, losses:0, feesTotal:0, best:0, worst:0,
     equityCurve:[]
@@ -684,6 +721,7 @@ let rate=BASE_RATE, rateDrift=0;
 let cvtDir='i2u';
 let dataSource='live', chipState='boot';
 let posDetailSym=null;
+let curLots=1;
 const socks=[];
 let lastDataAt=0, lastRestPoll=0, bootTime=Date.now();
 let liveAnnounced=false, frameWarned=false;
@@ -708,6 +746,16 @@ function fmtPxShort(p){
   if(p>=1)return p.toFixed(2);
   return p.toFixed(4);
 }
+function fmtQty(q){
+  let s=q.toFixed(6);
+  s=s.replace(/0+$/,'').replace(/\.$/,'');
+  return s;
+}
+function fmtLot(lot){
+  let s=lot.toFixed(6);
+  s=s.replace(/0+$/,'').replace(/\.$/,'');
+  return s;
+}
 function decFor(p){if(p>=1000)return 1;if(p>=100)return 2;if(p>=1)return 4;return 5;}
 function decFromTick(ts){
   if(!ts)return null;
@@ -726,6 +774,7 @@ function toast(title,msg,type){
   setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),260);},4200);
 }
 function diag(text,cls){sset($('feedText'),text);scls($('feedDot'),'feed-dot '+(cls||''));}
+function lotOf(sym){return (MK[sym]&&MK[sym].lot)||LOT_SIZES[sym]||1;}
 function totals(){
   let upnl=0,mg=0;
   for(const k in S.positions){
@@ -762,8 +811,8 @@ function load(){
       S.history=S.history||[];
     }
   }catch(e){}
-  if(!(S.margin>0))S.margin=100;
   if(!(S.lev>=1))S.lev=10;
+  S.lots=S.lots||{};
 }
 function pushHist(sym,label,qty,price,pnl){
   S.history.unshift({t:Date.now(),sym,label,qty,price,pnl});
@@ -815,7 +864,7 @@ function markDirty(){
 /* ================= MARKETS ================= */
 function seedEntry(sym){
   const meta=SYM_META[sym]||{name:sym.replace(/USD$/,''),short:sym.replace(/USD$/,'')};
-  return {sym,name:meta.name,short:meta.short,dec:2,decLocked:false,
+  return {sym,name:meta.name,short:meta.short,dec:2,decLocked:false,lot:LOT_SIZES[sym]||1,
           price:0,prevPrice:0,gotLive:false,open24:0,chg24:null,funding:0};
 }
 function buildMarketsFromTickers(tickers){
@@ -878,6 +927,21 @@ async function bootREST(){
       buildMarketsFromTickers(tickers);
       resubscribeAll();
       markData('REST');
+    }
+  }catch(e){}
+}
+/* fetch official lot sizes (contract_value) from products API */
+async function bootLots(){
+  try{
+    const prods=await apiGet('/v2/products?contract_types=perpetual_futures&underlying_asset_symbols=BTC,ETH,SOL');
+    if(Array.isArray(prods)){
+      prods.forEach(p=>{
+        if(MK[p.symbol]){
+          const cv=parseFloat(p.contract_value);
+          if(isFinite(cv)&&cv>0)MK[p.symbol].lot=cv;
+        }
+      });
+      markDirty();
     }
   }catch(e){}
 }
@@ -987,7 +1051,7 @@ function startSimFallback(){
     if(dataSource==='sim'){
       liveAnnounced=false;dataSource='live';setChip('boot');
       buildMarketsFromTickers(null);
-      socks.length=0;connectAllWS();bootREST();
+      socks.length=0;connectAllWS();bootREST();bootLots();
     }
   },60000);
 }
@@ -1002,6 +1066,38 @@ function tickSimMarkets(){
     m.price=Math.max(m.price*(1+chg),m.base*0.2);
     m.chg24=(m.price-m.open24)/m.open24*100;
   }
+}
+
+/* ================= QUANTITY (LOTS) ================= */
+function defaultLots(sym){
+  const m=MK[sym];
+  if(m&&m.price>0)return Math.max(1,Math.round(100/(lotOf(sym)*m.price)));
+  return 1;
+}
+function getLots(sym){
+  if(S.lots[sym]&&S.lots[sym]>=1)return Math.round(S.lots[sym]);
+  return defaultLots(sym);
+}
+function setLots(l){
+  l=Math.max(1,Math.round(l));
+  curLots=l;
+  S.lots[selSym]=l;
+  if(document.activeElement!==$('qtyIn'))$('qtyIn').value=l;
+  queueSave();
+  markDirty();
+}
+function stepLots(d){setLots(curLots+d);}
+function setMaxLots(){
+  const m=MK[selSym];
+  if(!m||!(m.price>0))return;
+  if(!(S.usd>0))return toast('No margin','Convert INR → USD first','err');
+  const lots=Math.floor((S.usd*0.99*S.lev)/(lotOf(selSym)*m.price));
+  setLots(Math.max(1,lots));
+}
+function setNotionalLots(usd){
+  const m=MK[selSym];
+  if(!m||!(m.price>0))return;
+  setLots(Math.max(1,Math.round(usd/(lotOf(selSym)*m.price))));
 }
 
 /* ================= FUNDING (INR) ================= */
@@ -1070,19 +1166,19 @@ function doConvert(){
   closeM('cvtOverlay');
 }
 
-/* ================= TRADING ================= */
+/* ================= TRADING (lot-based) ================= */
 function liqPrice(pos){
   const mm=0.005;
   return pos.dir===1?pos.entry*(1-1/pos.lev+mm):pos.entry*(1+1/pos.lev-mm);
 }
-function applyFill(sym,side,price,qty,lev,fee){
+function applyFill(sym,side,price,qty,lev,fee,lots){
   S.usd-=fee;S.feesTotal+=fee;
   const pos=S.positions[sym];
   if(!pos){
     const margin=price*qty/lev;
     if(S.usd<margin){S.usd+=fee;S.feesTotal-=fee;toast('Rejected','Insufficient USD margin','err');return false;}
     S.usd-=margin;
-    S.positions[sym]={sym,dir:side,qty,entry:price,margin,lev,tp:0,sl:0};
+    S.positions[sym]={sym,dir:side,lots,qty,entry:price,margin,lev,tp:0,sl:0};
     pushHist(sym,side===1?'Open Long':'Open Short',qty,price,-fee);
     queueSave();
     return true;
@@ -1093,7 +1189,7 @@ function applyFill(sym,side,price,qty,lev,fee){
     S.usd-=addM;
     const nq=pos.qty+qty;
     pos.entry=(pos.entry*pos.qty+price*qty)/nq;
-    pos.qty=nq;pos.margin+=addM;
+    pos.qty=nq;pos.lots+=lots;pos.margin+=addM;
     pos.lev=Math.max(1,(pos.entry*pos.qty)/pos.margin);
     pushHist(sym,side===1?'Add Long':'Add Short',qty,price,-fee);
     queueSave();
@@ -1105,16 +1201,21 @@ function applyFill(sym,side,price,qty,lev,fee){
   const mRel=pos.margin*ratio;
   S.usd+=mRel+realized;
   pos.qty-=closeQty;pos.margin-=mRel;
+  pos.lots=Math.max(0,pos.lots-Math.round(pos.lots*ratio));
   const net=realized-fee;
   recordClose(net);
   pushHist(sym,pos.dir===1?'Close Long':'Close Short',closeQty,price,net);
-  if(pos.qty<1e-9)delete S.positions[sym];
+  let remainingLots=0;
+  if(pos.qty<1e-9){
+    delete S.positions[sym];
+    remainingLots=Math.max(0,lots-Math.round(lots*ratio));
+  }
   const remaining=qty-closeQty;
   if(remaining>1e-9){
     const margin=price*remaining/lev;
     if(S.usd>=margin){
       S.usd-=margin;
-      S.positions[sym]={sym,dir:side,qty:remaining,entry:price,margin,lev,tp:0,sl:0};
+      S.positions[sym]={sym,dir:side,lots:Math.max(1,remainingLots),qty:remaining,entry:price,margin,lev,tp:0,sl:0};
       pushHist(sym,side===1?'Flip Long':'Flip Short',remaining,price,0);
     }
   }
@@ -1125,14 +1226,18 @@ function placeOrder(side){
   const m=MK[selSym];
   if(!m)return;
   if(!(m.price>0))return toast('No live price yet','Waiting for Delta India feed…','err');
-  const marginIn=S.margin, lev=S.lev;
-  if(!(marginIn>=5))return toast('Invalid size','Set margin in ☰ Menu (min $5)','err');
-  const fee=marginIn*lev*TAKER_FEE;
-  if(S.usd<marginIn+fee)return toast('Insufficient USD','Open ☰ Menu → Funds to convert INR','err');
+  const lots=curLots;
+  if(!(lots>=1))return toast('Set quantity','Minimum 1 lot','err');
+  const lev=S.lev;
+  const lot=lotOf(selSym);
+  const qty=lots*lot;
   const fill=side===1?m.price*1.0003:m.price*0.9997;
-  const qty=marginIn*lev/fill;
-  if(applyFill(selSym,side,fill,qty,lev,fee)){
-    toast('Filled ✓',(side===1?'Long':'Short')+' '+m.short+' @ '+fmtPrice(fill,m.dec),'ok');
+  const notional=qty*fill;
+  const margin=notional/lev;
+  const fee=notional*TAKER_FEE;
+  if(margin+fee>S.usd)return toast('Insufficient USD','Need '+fmtUsd(margin+fee)+' $ — ☰ → Funds','err');
+  if(applyFill(selSym,side,fill,qty,lev,fee,lots)){
+    toast('Filled ✓',(side===1?'Long':'Short')+' '+lots+' lot'+(lots>1?'s':'')+' ('+fmtQty(qty)+' '+m.short+') @ '+fmtPrice(fill,m.dec),'ok');
     flushSave(true);markDirty();
   }
 }
@@ -1141,7 +1246,7 @@ function closePosition(sym){
   const m=MK[sym];
   const fill=pos.dir===1?m.price*0.9997:m.price*1.0003;
   const fee=pos.qty*fill*TAKER_FEE;
-  applyFill(sym,-pos.dir,fill,pos.qty,pos.lev,fee);
+  applyFill(sym,-pos.dir,fill,pos.qty,pos.lev,fee,pos.lots);
   toast('Closed',m.short+' @ '+fmtPrice(fill,m.dec),'ok');
   flushSave(true);markDirty();
 }
@@ -1153,7 +1258,7 @@ function closeAll(){
 function closeAtTrigger(pos,label,price){
   const m=MK[pos.sym];
   const fee=pos.qty*price*TAKER_FEE;
-  applyFill(pos.sym,-pos.dir,price,pos.qty,pos.lev,fee);
+  applyFill(pos.sym,-pos.dir,price,pos.qty,pos.lev,fee,pos.lots);
   if(S.history.length)S.history[0].label=label;
   toast(label,m.short+' closed @ '+fmtPrice(price,m.dec),label==='TP hit'?'ok':'err');
   flushSave(true);
@@ -1209,7 +1314,7 @@ function openPosDetail(sym){
   const t=$('pdTitle');
   t.innerHTML='<span class="side-tag '+(pos.dir===1?'long':'short')+'">'+(pos.dir===1?'LONG':'SHORT')+' '+pos.lev+'x</span> '+m.short;
   sset($('pdEntry'),fmtPrice(pos.entry,m.dec));
-  sset($('pdQty'),pos.qty.toFixed(5));
+  sset($('pdQty'),pos.lots+' lot'+(pos.lots>1?'s':'')+' • '+fmtQty(pos.qty));
   sset($('pdMargin'),fmtUsd(pos.margin)+' $');
   sset($('pdLiq'),fmtPrice(liqPrice(pos),m.dec));
   $('pdTpIn').value=pos.tp?pos.tp:'';
@@ -1229,7 +1334,6 @@ function renderPosDetailLive(){
   const up=(m.price-pos.entry)*pos.qty*pos.dir;
   sset($('pdMark'),m.price>0?fmtPrice(m.price,m.dec):'…');
   sset($('pdUpnl'),fmtSign(up)+' $');
-  scls($('pdUpnl').classList.contains('x')?null:null,'');
   $('pdUpnl').className=up>=0?'pos':'neg';
 }
 function saveTpSl(){
@@ -1254,7 +1358,8 @@ function saveTpSl(){
   pos.tp=hasTp?tpRaw:0;
   pos.sl=hasSl?slRaw:0;
   queueSave();flushSave(true);
-  toast('Saved ✓',(pos.tp?'TP '+fmtPxShort(pos.tp):'')+(pos.tp&&pos.sl?' • ':'')+(pos.sl?'SL '+fmtPxShort(pos.sl):'')||(pos.tp||pos.sl?'':'TP/SL cleared'),'ok');
+  const txt=(pos.tp?'TP '+fmtPxShort(pos.tp):'')+(pos.tp&&pos.sl?' • ':'')+(pos.sl?'SL '+fmtPxShort(pos.sl):'');
+  toast('Saved ✓',txt||'TP/SL cleared','ok');
   markDirty();
 }
 function clearTpSl(){
@@ -1273,6 +1378,13 @@ function chgOf(m){
   if(m.open24>0&&m.price>0)return (m.price-m.open24)/m.open24*100;
   return 0;
 }
+function selectSymbol(sym){
+  if(selSym===sym)return;
+  selSym=sym;
+  curLots=getLots(sym);
+  if(document.activeElement!==$('qtyIn'))$('qtyIn').value=curLots;
+  markDirty();
+}
 function ensureSymBtns(){
   const wrap=$('symRow');
   if(wrap.childElementCount===SYMBOLS.length)return;
@@ -1281,11 +1393,7 @@ function ensureSymBtns(){
     const b=document.createElement('button');
     b.className='sym-btn';
     b.textContent=SYM_META[sym].short;
-    b.addEventListener('click',()=>{
-      if(selSym===sym)return;
-      selSym=sym;
-      markDirty();
-    });
+    b.addEventListener('click',()=>selectSymbol(sym));
     wrap.appendChild(b);
     symRefs[sym]=b;
   });
@@ -1300,6 +1408,7 @@ function renderMarkets(){
   });
   const m=MK[selSym];if(!m)return;
   sset($('mktTitle'),m.sym+' • PERP');
+  sset($('lotLabel'),'1 lot = '+fmtLot(m.lot)+' '+m.short);
   sset($('psPrice'),m.price>0?fmtPrice(m.price,m.dec):'…');
   scls($('psPrice'),'ps-price '+(m.price>=m.prevPrice?'pos':'neg'));
   const chg=chgOf(m);
@@ -1313,9 +1422,19 @@ function renderHeader(){
   sset($('hEquity'),fmtInr(eqInr));
   sset($('hBalSub'),'Free '+fmtUsd(S.usd)+' $');
 }
-function renderEntry(){
+function renderQty(){
+  sset($('qtyLevRt'),S.lev+'x ⚙');
+  if(document.activeElement!==$('qtyIn'))$('qtyIn').value=curLots>=1?curLots:'';
   const m=MK[selSym];
-  const sub=(m?fmtUsd0(S.margin)+' $ • '+S.lev+'x':'—');
+  if(!m||!(m.price>0)||!(curLots>=1)){sset($('qtyInfo'),'—');return;}
+  const lot=lotOf(selSym);
+  const qty=curLots*lot;
+  const notional=qty*m.price;
+  const margin=notional/S.lev;
+  sset($('qtyInfo'),curLots+' lot'+(curLots>1?'s':'')+' = '+fmtQty(qty)+' '+m.short+' ≈ $'+fmtUsd0(notional)+' • margin $'+fmtUsd(margin));
+}
+function renderEntry(){
+  const sub=(curLots>=1)?(curLots+' lot'+(curLots>1?'s':'')+' • '+S.lev+'x'):'—';
   sset($('buySub'),sub);
   sset($('sellSub'),sub);
   $('convHint').style.display=(S.usd<5&&S.inr>=1)?'flex':'none';
@@ -1324,7 +1443,7 @@ function renderPositions(){
   const keys=Object.keys(S.positions);
   const sig=keys.map(k=>{
     const p=S.positions[k];
-    return k+':'+p.entry.toFixed(6)+':'+p.margin.toFixed(4)+':'+p.lev+':'+(p.tp||0)+':'+(p.sl||0);
+    return k+':'+p.entry.toFixed(6)+':'+p.margin.toFixed(4)+':'+p.lev+':'+(p.tp||0)+':'+(p.sl||0)+':'+p.lots;
   }).join('|');
   sset($('cntPos'),String(keys.length));
   $('posEmpty').style.display=keys.length?'none':'block';
@@ -1343,7 +1462,7 @@ function renderPositions(){
         '<div class="pc-row1">'+
           '<span class="side-tag '+(pos.dir===1?'long':'short')+'">'+(pos.dir===1?'LONG':'SHORT')+' '+pos.lev+'x</span>'+
           '<span class="pc-sym">'+m.short+'</span>'+
-          '<span class="pc-qty mono">'+pos.qty.toFixed(4)+'</span>'+
+          '<span class="pc-qty">'+pos.lots+' lot'+(pos.lots>1?'s':'')+' • '+fmtQty(pos.qty)+'</span>'+
           '<span class="pc-upnl">—</span>'+
         '</div>'+
         '<div class="pc-row2">'+
@@ -1407,7 +1526,6 @@ function renderFunds(){
 }
 function renderMenu(){
   if(!$('menuOverlay').classList.contains('show'))return;
-  if(document.activeElement!==$('sizeIn'))$('sizeIn').value=S.margin;
   if(document.activeElement!==$('levRange'))$('levRange').value=S.lev;
   sset($('levVal'),S.lev+'x');
 }
@@ -1458,6 +1576,7 @@ function drawEquityCurve(){
 function renderAll(){
   renderHeader();
   renderMarkets();
+  renderQty();
   renderEntry();
   renderPositions();
   renderPosDetailLive();
@@ -1508,20 +1627,32 @@ $('buyBtn').addEventListener('click',()=>placeOrder(1));
 $('sellBtn').addEventListener('click',()=>placeOrder(-1));
 $('closeAllBtn').addEventListener('click',closeAll);
 
-/* menu */
-$('menuBtn').addEventListener('click',()=>{renderMenu();openM('menuOverlay');});
-$('sizeIn').addEventListener('input',()=>{
-  const v=parseFloat($('sizeIn').value);
-  if(isFinite(v)&&v>=5){S.margin=v;queueSave();markDirty();}
-});
-document.querySelectorAll('.qk button[data-s]').forEach(b=>{
+/* quantity (lots) controls */
+$('qtyMinus').addEventListener('click',()=>stepLots(-1));
+$('qtyPlus').addEventListener('click',()=>stepLots(1));
+document.querySelectorAll('.qk button[data-q]').forEach(b=>{
   b.addEventListener('click',()=>{
-    const s=b.dataset.s;
-    S.margin=s==='max'?Math.max(5,Math.floor(S.usd*0.999)):parseFloat(s);
-    $('sizeIn').value=S.margin;
-    queueSave();markDirty();
+    const q=b.dataset.q;
+    if(q==='max')setMaxLots();
+    else setNotionalLots(parseFloat(q));
   });
 });
+$('qtyIn').addEventListener('input',()=>{
+  const v=parseInt($('qtyIn').value,10);
+  if(isFinite(v)&&v>=1){
+    curLots=v;
+    S.lots[selSym]=v;
+    queueSave();
+    markDirty();
+  }
+});
+$('qtyIn').addEventListener('blur',()=>{
+  $('qtyIn').value=curLots>=1?curLots:'';
+});
+$('qtyLevRt').addEventListener('click',()=>{renderMenu();openM('menuOverlay');});
+
+/* menu */
+$('menuBtn').addEventListener('click',()=>{renderMenu();openM('menuOverlay');});
 $('levRange').addEventListener('input',()=>{
   S.lev=parseInt($('levRange').value,10);
   sset($('levVal'),S.lev+'x');
@@ -1607,10 +1738,12 @@ window.addEventListener('resize',()=>{
 /* ================= BOOT ================= */
 buildMarketsFromTickers(null);
 load();
+curLots=getLots(selSym);
 if(S.equityCurve.length===0)sampleEq();
 renderAll();
 connectAllWS();
 bootREST();
+bootLots();
 </script>
 </body>
 </html>
