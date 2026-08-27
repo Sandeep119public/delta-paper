@@ -73,9 +73,23 @@
         <button data-tf="5m">5m</button>
         <button data-tf="15m">15m</button>
         <button data-tf="1h">1h</button>
+        <span class="tf-sep"></span>
+        <button id="vwapToggle" class="tf-btn" title="VWAP">VWAP</button>
+        <button id="heatmapToggle" class="tf-btn on" title="Liquidation Heatmap">LQ</button>
       </div>
     </div>
-    <div class="panel-body chart-body"><div id="tv-chart-container"></div></div>
+    <div class="panel-body chart-body">
+      <div id="tv-chart-container"><canvas id="heatmapCanvas"></canvas></div>
+    </div>
+  </section>
+
+  <!-- CENTER: Depth Chart -->
+  <section class="panel zone-depth">
+    <div class="panel-h">
+      <h3>Depth</h3>
+      <span class="depth-mid" id="depthMid">—</span>
+    </div>
+    <div class="panel-body depth-body"><canvas id="depthCanvas"></canvas></div>
   </section>
 
   <!-- CENTER BOTTOM: Positions -->
@@ -434,6 +448,9 @@
 <script src="js/KeyboardShortcuts.js"></script>
 <script src="js/SimulationEngine.js"></script>
 <script src="js/BacktestEngine.js"></script>
+<script src="js/VwapIndicator.js"></script>
+<script src="js/DepthChart.js"></script>
+<script src="js/LiquidationHeatmap.js"></script>
 <script src="js/app.js"></script>
 <script src="js/boot.js"></script>
 </body>

@@ -36,6 +36,11 @@ class DeltaPaperApp {
     this._posCards = {};
     this._posKeyStr = '';
 
+    // Visualization modules (initialized in _initChart)
+    this.vwap = null;
+    this.depthChart = null;
+    this.heatmap = null;
+
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
     this.switchSymbol = this.switchSymbol.bind(this);
@@ -54,6 +59,7 @@ class DeltaPaperApp {
     if (this.state.get().equityCurve.length === 0) this.sampleEq();
 
     this._initChart();
+    this._initVisualization();
     this.renderAll();
     this.startSimulationLoop();
     DELTA_LOGGER.log('[App] Initialized successfully');
@@ -92,9 +98,25 @@ class DeltaPaperApp {
 
     this._loadCandles();
 
+    // Throttled depth chart update (max once per 200ms)
+    let lastDepthUpdate = 0;
     this.market.subscribe(() => {
       const m = this.market.getMarket(this.selSym);
       if (m && m.price > 0) this._feedTick(m.price);
+
+      // Update depth chart (throttled)
+      if (this.depthChart && m && m.price > 0) {
+        const now = performance.now();
+        if (now - lastDepthUpdate > 200) {
+          lastDepthUpdate = now;
+          const sim = window.simulationEngine || null;
+          if (sim && this.config.VIS && this.config.VIS.USE_SIMULATED_L2) {
+            this.depthChart.updateFromMarket(m, sim);
+            const midEl = this.$('depthMid');
+            if (midEl) midEl.textContent = this.fmtPrice(m.price, m.dec);
+          }
+        }
+      }
     });
 
     const tfBtns = document.querySelectorAll('.tf-row button');
@@ -153,11 +175,67 @@ class DeltaPaperApp {
         if (this._tvCandle) this._tvCandle.setData(data);
         this._curCandle = { ...data[data.length - 1] };
         if (this._tvChart) this._tvChart.timeScale().scrollToRealTime();
+        // Pre-fill VWAP with historical data
+        if (this.vwap) this.vwap.setData(data);
       })
       .catch(e => {
         DELTA_LOGGER.log('[Chart] candle load failed', e);
         setTimeout(() => this._loadCandles(this.selSym, this._tf), 5000);
+    });
+  }
+
+  _initVisualization() {
+    if (!this._tvChart || !this._tvCandle) return;
+
+    // VWAP indicator
+    try {
+      this.vwap = new VwapIndicator(this._tvChart, {
+        showBands: this.config.VIS && this.config.VIS.VWAP_BANDS,
       });
+      const vwapBtn = this.$('vwapToggle');
+      if (vwapBtn) {
+        vwapBtn.addEventListener('click', () => {
+          const on = vwapBtn.classList.toggle('on');
+          this.vwap.toggle(on);
+        });
+      }
+    } catch (e) { DELTA_LOGGER.warn('[App] VWAP init failed', e); }
+
+    // Liquidation heatmap overlay
+    try {
+      const hmCanvas = this.$('heatmapCanvas');
+      if (hmCanvas) {
+        this.heatmap = new LiquidationHeatmap(
+          this._tvChart, this._tvCandle, hmCanvas, this.config, this.state,
+          window.simulationEngine || null
+        );
+        const hmBtn = this.$('heatmapToggle');
+        if (hmBtn) {
+          hmBtn.addEventListener('click', () => {
+            const on = hmBtn.classList.toggle('on');
+            this.heatmap.toggle(on);
+          });
+        }
+      }
+    } catch (e) { DELTA_LOGGER.warn('[App] Heatmap init failed', e); }
+
+    // Depth chart
+    try {
+      const depthCanvas = this.$('depthCanvas');
+      if (depthCanvas) {
+        this.depthChart = new DepthChart(depthCanvas, this.config);
+        // Initial simulated depth
+        const m = this.market.getMarket(this.selSym);
+        if (m) {
+          const sim = window.simulationEngine || null;
+          if (sim && this.config.VIS && this.config.VIS.USE_SIMULATED_L2) {
+            this.depthChart.updateFromMarket(m, sim);
+            const midEl = this.$('depthMid');
+            if (midEl) midEl.textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '—';
+          }
+        }
+      }
+    } catch (e) { DELTA_LOGGER.warn('[App] DepthChart init failed', e); }
   }
 
   _feedTick(price) {
@@ -177,6 +255,11 @@ class DeltaPaperApp {
     if (this._tvVol) {
       const vol = c._vol = (c._vol || 0) + 1;
       this._tvVol.update({ time: bucket, value: vol, color: 'rgba(59,130,246,0.2)' });
+    }
+
+    // Feed VWAP (tick volume = 1 per price update)
+    if (this.vwap) {
+      this.vwap.update(price, 1, Math.floor(Date.now() / 1000));
     }
 
     this._updateTpSlLines(this.market.getMarket(this.selSym));
@@ -1117,6 +1200,8 @@ class DeltaPaperApp {
     setInterval(() => {
       this.checkTPSL();
       this.checkLiquidations();
+      // Refresh liquidation heatmap (reads positions, redraws canvas)
+      if (this.heatmap) this.heatmap.refresh();
       this.markDirty();
     }, 1000);
   }

@@ -73,6 +73,16 @@ const DELTA_CONFIG = {
     WS_HEARTBEAT: 20000,       // 20 second heartbeat
     RECONNECT_BASE_DELAY: 100, // 100ms base reconnect delay
     MAX_RECONNECT_DELAY: 30000 // 30 second max reconnect delay
+  },
+
+  // Visualization settings
+  VIS: {
+    USE_SIMULATED_L2: true,    // Use SimulationEngine for depth chart (flip to false if real L2 WS feed available)
+    DEPTH_LEVELS: 25,          // Number of price levels in depth chart
+    HEATMAP_BUCKET_SIZE: 50,   // Price bucket size for liquidation clusters (USD)
+    HEATMAP_FPS: 15,           // Max render FPS for heatmap overlay
+    DEPTH_FPS: 30,             // Max render FPS for depth chart
+    VWAP_BANDS: true,          // Show VWAP standard deviation bands
   }
 };
 
