@@ -2,6 +2,11 @@
  * Delta Paper Trading - Market Data Module (REAL-TIME)
  * Direct WebSocket connection to Delta Exchange India for live prices
  * Supports multiple message formats and automatic reconnection
+ *
+ * Patched: fixed apiGet proxy-chain application, correct Delta WS
+ * subscription protocol, full ticker/trades/ob_l1/funding/mark_price
+ * parsing, heartbeat watchdog, and missing notifyListeners() in
+ * the REST fallback path.
  */
 
 class MarketDataManager {
@@ -9,41 +14,37 @@ class MarketDataManager {
     this.config = config;
     this.markets = {};
     this.sockets = [];
-    this.dataSource = 'boot';
+    this.dataSource = 'boot';     // 'boot' | 'rest' | 'live' | 'sim'
     this.lastRestPoll = 0;
     this.listeners = new Set();
     this.updateCount = 0;
     this.lastUpdateTime = 0;
+    this.lastHeartbeat = 0;
     this.notifyRAF = null;
+    this.hbWatchRAF = null;
   }
 
-  /**
-   * Initialize market data manager
-   */
+  /** Initialize market data manager */
   async init() {
-    // Initialize market entries
     this.config.SYMBOLS.forEach(sym => {
       this.markets[sym] = this.createMarketEntry(sym);
     });
 
-    // Boot sequence: fetch lot sizes and initial ticker data
-    await Promise.all([
-      this.bootLots(),
-      this.bootREST()
-    ]);
+    // Boot: lot sizes + initial tickers in parallel
+    await Promise.all([this.bootLots(), this.bootREST()]);
 
-    // Connect WebSocket for live updates
+    // Live WS feed (multiple endpoint fallbacks)
     this.connectAllWS();
 
-    // Start REST polling as backup (3 second interval)
-    setInterval(() => this.restPoll(), 3000);
+    // REST polling as WS backup
+    setInterval(() => this.restPoll(), this.config.PERF && this.config.PERF.REST_POLL_INTERVAL || 3000);
+
+    // Heartbeat watchdog — reconnect if feed stalls
+    setInterval(() => this.checkHeartbeat(), 10000);
 
     DELTA_LOGGER.log('[Market] Initialized with', Object.keys(this.markets).length, 'symbols');
   }
 
-  /**
-   * Create a market entry object
-   */
   createMarketEntry(symbol) {
     return {
       symbol: symbol,
@@ -52,36 +53,29 @@ class MarketDataManager {
       open24: null,
       chg24: null,
       funding: null,
-      lot: this.config.LOT_SIZES[symbol] || 0.001,
+      lot: (this.config.LOT_SIZES && this.config.LOT_SIZES[symbol]) || 0.001,
       gotLive: false,
       dec: 2,
       decLocked: false
     };
   }
 
-  /**
-   * Build markets from ticker data
-   */
   buildMarketsFromTickers(tickers) {
     if (!Array.isArray(tickers)) return;
-
     tickers.forEach(t => {
-      if (this.markets[t.symbol]) {
-        this.applyTickerObj(t);
-      }
+      if (t && t.symbol && this.markets[t.symbol]) this.applyTickerObj(t);
     });
-
     this.notifyListeners();
   }
 
-  /**
-   * Apply ticker object to market data - OPTIMIZED FOR SPEED
-   */
+  /** Apply a ticker-shaped object to a market entry */
   applyTickerObj(t) {
-    const m = this.markets[t.symbol];
+    if (!t) return;
+    const sym = t.symbol;
+    const m = this.markets[sym];
     if (!m) return;
 
-    // Priority: mark_price > close > last_price > best_ask/best_bid mid
+    // Priority: mark_price > close > last_price > mid(best_ask, best_bid)
     let mark = parseFloat(t.mark_price);
     if (!isFinite(mark) || mark <= 0) mark = parseFloat(t.close);
     if (!isFinite(mark) || mark <= 0) mark = parseFloat(t.last_price);
@@ -96,17 +90,12 @@ class MarketDataManager {
     if (isFinite(mark) && mark > 0) {
       m.prevPrice = m.price || mark;
       m.price = mark;
-      m.gotLive = true;
-      
-      // Auto-detect decimal precision
-      if (!m.decLocked) {
-        m.dec = this.decFor(mark);
-        m.decLocked = true;
-      }
+      // Keep gotLive flag true only if set externally; REST fallbacks leave it false
     }
 
-    // 24h change
-    const ch = parseFloat(t.ltp_change_24h) || parseFloat(t.mark_change_24h);
+    // 24h % change
+    let ch = parseFloat(t.mark_change_24h);
+    if (!isFinite(ch)) ch = parseFloat(t.ltp_change_24h);
     if (isFinite(ch)) m.chg24 = ch;
 
     // Funding rate
@@ -121,20 +110,17 @@ class MarketDataManager {
     this.lastUpdateTime = Date.now();
   }
 
-  /**
-   * Fetch lot sizes from API
-   */
   async bootLots() {
     try {
       const products = await this.apiGet('/v2/products?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(','));
       if (Array.isArray(products)) {
         products.forEach(p => {
-          const sym = p.underlying_asset_symbol;
+          const sym = p && p.underlying_asset_symbol;
           if (sym && this.markets[sym]) {
             const cv = parseFloat(p.contract_value);
             if (isFinite(cv) && cv > 0) {
               this.markets[sym].lot = cv;
-              this.config.LOT_SIZES[sym] = cv;
+              if (this.config.LOT_SIZES) this.config.LOT_SIZES[sym] = cv;
             }
           }
         });
@@ -145,19 +131,18 @@ class MarketDataManager {
     }
   }
 
-  /**
-   * Bootstrap via REST API
-   */
   async bootREST() {
     try {
       const tickers = await this.apiGet('/v2/tickers?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(','));
       if (Array.isArray(tickers) && tickers.length) {
         this.buildMarketsFromTickers(tickers);
+        this.dataSource = 'rest';
         DELTA_LOGGER.log('[Market] ✓ Bootstrapped via REST - got', tickers.length, 'tickers');
+      } else {
+        throw new Error('Empty ticker response');
       }
     } catch (e) {
-      DELTA_LOGGER.warn('[Market] ✗ REST boot failed:', e.message);
-      // Fallback: set simulated prices based on config BASE_RATE
+      DELTA_LOGGER.warn('[Market] ✗ REST boot failed, using simulation:', e.message);
       this.config.SYMBOLS.forEach(sym => {
         if (!this.markets[sym].price) {
           const simPrice = this.getSimulatedPrice(sym);
@@ -165,24 +150,16 @@ class MarketDataManager {
           this.markets[sym].gotLive = false;
         }
       });
+      this.dataSource = 'sim';
+      this.notifyListeners();   // <-- FIX: repaint UI with simulated prices
     }
   }
 
-  /**
-   * Get simulated price for fallback (when API fails)
-   */
   getSimulatedPrice(symbol) {
-    const basePrices = {
-      BTCUSD: 78000,
-      ETHUSD: 2450,
-      SOLUSD: 96
-    };
+    const basePrices = { BTCUSD: 78000, ETHUSD: 2450, SOLUSD: 96 };
     return basePrices[symbol] || 100;
   }
 
-  /**
-   * Periodic REST polling as WebSocket backup
-   */
   async restPoll() {
     if (Date.now() - this.lastRestPoll < 3000) return;
     this.lastRestPoll = Date.now();
@@ -191,32 +168,22 @@ class MarketDataManager {
       const tickers = await this.apiGet('/v2/tickers?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(','));
       if (Array.isArray(tickers)) {
         tickers.forEach(t => {
-          if (this.markets[t.symbol]) {
-            this.applyTickerObj(t);
-          }
+          if (t && t.symbol && this.markets[t.symbol]) this.applyTickerObj(t);
         });
-        
-        // Update data source if no WS yet
         if (!Object.values(this.markets).some(m => m.gotLive)) {
           this.dataSource = 'rest';
-          this.notifyListeners();
         }
+        this.notifyListeners();
       }
     } catch (e) {
       // Silent fail for polling
     }
   }
 
-  /**
-   * Connect to all WebSocket endpoints
-   */
   connectAllWS() {
-    this.config.WS_ENDPOINTS.forEach(url => this.openWS(url));
+    (this.config.WS_ENDPOINTS || []).forEach(url => this.openWS(url));
   }
 
-  /**
-   * Open WebSocket connection - DIRECT CONNECTION, NO PROXY
-   */
   openWS(url) {
     let ws;
     try {
@@ -234,32 +201,22 @@ class MarketDataManager {
       DELTA_LOGGER.log('[Market] WS connected:', url);
       this.sendSubscriptions(sock);
 
-      // Heartbeat to keep connection alive
       if (sock.hb) clearInterval(sock.hb);
       sock.hb = setInterval(() => {
         try {
-          if (ws.readyState === 1) {
-            ws.send('{"type":"ping"}');
-          }
+          if (ws.readyState === 1) ws.send('{"type":"ping"}');
         } catch (e) {}
-      }, 20000);
+      }, (this.config.PERF && this.config.PERF.WS_HEARTBEAT) || 20000);
     };
 
     ws.onmessage = (ev) => {
       let msg;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch (e) {
-        return;
-      }
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
       this.handleWsMsg(msg, sock);
     };
 
     ws.onclose = () => {
-      if (sock.hb) {
-        clearInterval(sock.hb);
-        sock.hb = null;
-      }
+      if (sock.hb) { clearInterval(sock.hb); sock.hb = null; }
       this.scheduleReconnect(url);
     };
 
@@ -269,16 +226,14 @@ class MarketDataManager {
     };
   }
 
-  /**
-   * Schedule WebSocket reconnection with exponential backoff
-   */
   scheduleReconnect(url) {
     const sock = this.sockets.find(s => s.url === url);
-    if (sock) {
-      sock.retries = Math.min(sock.retries + 1, 8);
-    }
-    
-    const delay = Math.min(30000, 100 * Math.pow(2, (sock ? sock.retries : 1)));
+    if (sock) sock.retries = Math.min(sock.retries + 1, 8);
+
+    const base = (this.config.PERF && this.config.PERF.RECONNECT_BASE_DELAY) || 100;
+    const max  = (this.config.PERF && this.config.PERF.MAX_RECONNECT_DELAY)  || 30000;
+    const delay = Math.min(max, base * Math.pow(2, (sock ? sock.retries : 1)));
+
     setTimeout(() => {
       const idx = this.sockets.findIndex(s => s.url === url);
       if (idx >= 0) this.sockets.splice(idx, 1);
@@ -286,178 +241,243 @@ class MarketDataManager {
     }, delay);
   }
 
-  /**
-   * Send subscription messages - DELTA INDIA SPECIFIC FORMAT
-   */
+  /** Subscribe using the correct Delta Exchange WS protocol */
   sendSubscriptions(sock) {
     const w = sock.ws;
     if (!w || w.readyState !== 1) return;
+    const syms = this.config.SYMBOLS;
 
     try {
-      // Single bulk subscription with proper channel format per Delta docs
+      // Enable server-side heartbeat (Delta-specific)
+      w.send(JSON.stringify({ type: 'enable_heartbeat' }));
+
+      // Official subscribe: channel name + symbols array.
+      // Docs: "If you subscribe to the ticker channel without specifying a
+      // symbols list, you will not receive any data."
       w.send(JSON.stringify({
         type: 'subscribe',
-        payload: {
-          channels: [
-            { name: 'ticker', symbols: this.config.SYMBOLS },
-            { name: 'trades', symbols: this.config.SYMBOLS },
-            { name: 'mark_price', symbols: this.config.SYMBOLS.map(s => 'MARK:' + s) }
-          ]
-        }
+        payload: { channels: [
+          { name: 'ticker',       symbols: syms },
+          { name: 'trades',       symbols: syms },
+          { name: 'ob_l1',        symbols: syms },
+          { name: 'funding_rate', symbols: syms }
+        ]}
       }));
-      
-      // Enable heartbeat
-      w.send(JSON.stringify({ type: 'enable_heartbeat' }));
-      
-      DELTA_LOGGER.log('[Market] Subscribed to:', this.config.SYMBOLS.join(', '));
+
+      // Legacy/alternate formats as harmless fallbacks (server ignores unknowns)
+      syms.forEach(sym => {
+        w.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'ticker:' + sym }] } }));
+        w.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'l2_' + sym   }] } }));
+        w.send(JSON.stringify({ type: 'subscribe', payload: { channels: [{ name: 'trade:' + sym}] } }));
+      });
+
+      DELTA_LOGGER.log('[Market] Subscribed to:', syms.join(', '));
     } catch (e) {
       DELTA_LOGGER.warn('[Market] Subscription failed:', e.message);
     }
   }
 
   /**
-   * Handle WebSocket message - SUPPORTS ALL DELTA FORMATS
+   * Handle a WebSocket message. Supports both the official Delta shapes
+   * (ticker/trades/ob_l1/funding_rate/mark_price/heartbeat) and legacy
+   * shapes for backward compatibility.
    */
   handleWsMsg(msg, sock) {
+    if (!msg || typeof msg !== 'object') return;
     const tp = msg.type;
-    
-    // Skip non-data messages
-    if (!tp || tp === 'heartbeat' || tp === 'subscriptions' || tp === 'success' || tp === 'pong') {
+
+    // Non-data messages
+    if (!tp || tp === 'subscriptions' || tp === 'success') return;
+
+    // Heartbeat/pong — track liveness and bail
+    if (tp === 'heartbeat' || tp === 'pong') {
+      this.lastHeartbeat = Date.now();
       return;
     }
 
     sock.hadData = true;
+    this.lastHeartbeat = Date.now();
 
-    // Format: trades channel - {type:'trades', sy:'BTCUSD', p:'78600.5'}
-    if (tp === 'trades' && msg.sy && msg.p) {
-      this.applyTickerObj({ symbol: msg.sy, last_price: msg.p, close: msg.p });
-      this.dataSource = 'live';
-      this.notifyListeners();
-      return;
-    }
-
-    // Format: mark_price channel - {type:'mark_price', sy:'MARK:BTCUSD', p:'...'}
-    if (tp === 'mark_price' && msg.sy && msg.p) {
-      const sym = msg.sy.replace('MARK:', '');
-      this.applyTickerObj({ symbol: sym, mark_price: msg.p });
-      this.dataSource = 'live';
-      this.notifyListeners();
-      return;
-    }
-
-    // Format: ticker channel with data array - {type:'ticker', sy:'BTCUSD', d:[{m: price}]}
-    if (tp === 'ticker' && msg.sy && Array.isArray(msg.d)) {
-      const sym = msg.sy;
-      if (this.markets[sym] && msg.d.length > 0) {
-        const d = msg.d[0];
-        const mark = parseFloat(d.m);
-        if (isFinite(mark) && mark > 0) {
-          this.applyTickerObj({ symbol: sym, mark_price: mark });
+    // ---- Official Delta ticker channel ----
+    // {type:'ticker', sy:'BTCUSD',
+    //  d:[{m:'72124', m24hc:'1.5', q:['72101','822','72100','2123',null], ...}]}
+    if (tp === 'ticker' && msg.sy && Array.isArray(msg.d) && msg.d.length > 0) {
+      const d = msg.d[0];
+      this.applyTickerObj({
+        symbol: msg.sy,
+        mark_price: d.m,
+        mark_change_24h: d.m24hc,
+        quotes: {
+          best_ask: (d.q && d.q[0]),
+          best_bid: (d.q && d.q[2])
         }
-      }
+      });
+      this.markets[msg.sy].gotLive = true;
       this.dataSource = 'live';
       this.notifyListeners();
       return;
     }
 
-    // Format 1: Channel-based ticker (ticker:SYMBOL)
+    // ---- Official Delta trades channel ----
+    // {type:'trades', sy:'BTCUSD', p:'72141.5', s:1.0, ...}
+    if (tp === 'trades' && msg.sy && msg.p) {
+      this.applyTickerObj({
+        symbol: msg.sy,
+        last_price: msg.p,
+        close: msg.p
+      });
+      this.markets[msg.sy].gotLive = true;
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
+
+    // ---- Official Delta ob_l1 channel ----
+    // {type:'ob_l1', sy:'BTCUSD', ap:'68519.0', bp:'68518.0', ...}
+    if (tp === 'ob_l1' && msg.sy) {
+      this.applyTickerObj({
+        symbol: msg.sy,
+        quotes: { best_ask: msg.ap, best_bid: msg.bp }
+      });
+      this.markets[msg.sy].gotLive = true;
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
+
+    // ---- Official funding_rate channel ----
+    // {type:'funding_rate', sy:'BTCUSD', fr:'0.01', fi:28800, nfr:..., ...}
+    if (tp === 'funding_rate' && msg.sy) {
+      const m = this.markets[msg.sy];
+      if (m) {
+        const fr = parseFloat(msg.fr);
+        if (isFinite(fr)) m.funding = fr;
+        m.gotLive = true;
+        this.dataSource = 'live';
+        this.notifyListeners();
+      }
+      return;
+    }
+
+    // ---- Official mark_price channel ----
+    // {type:'mark_price', sy:'MARK:BTCUSD' | 'BTCUSD', p:'72124.5', ...}
+    if (tp === 'mark_price' && msg.sy && msg.p) {
+      const sym = (typeof msg.sy === 'string' && msg.sy.startsWith('MARK:'))
+        ? msg.sy.substring(5) : msg.sy;
+      this.applyTickerObj({ symbol: sym, mark_price: msg.p });
+      if (this.markets[sym]) this.markets[sym].gotLive = true;
+      this.dataSource = 'live';
+      this.notifyListeners();
+      return;
+    }
+
+    // ---- Legacy Format 1: channel-based ticker "ticker:SYMBOL" ----
     if (msg.channel && typeof msg.channel === 'string' && msg.channel.startsWith('ticker:')) {
       const sym = msg.channel.split(':')[1];
       if (this.markets[sym] && msg.data) {
         this.applyTickerObj({ ...msg.data, symbol: sym });
+        this.markets[sym].gotLive = true;
         this.dataSource = 'live';
         this.notifyListeners();
       }
       return;
     }
 
-    // Format 2: Channel-based trade (trade:SYMBOL)
+    // ---- Legacy Format 2: channel-based trade "trade:SYMBOL" ----
     if (msg.channel && typeof msg.channel === 'string' && msg.channel.startsWith('trade:')) {
       const sym = msg.channel.split(':')[1];
-      if (this.markets[sym] && msg.data && Array.isArray(msg.data)) {
+      if (this.markets[sym] && Array.isArray(msg.data)) {
         msg.data.forEach(trade => {
-          if (trade.price) {
-            this.applyTickerObj({ 
-              symbol: sym, 
-              last_price: trade.price,
-              close: trade.price
-            });
+          if (trade && trade.price) {
+            this.applyTickerObj({ symbol: sym, last_price: trade.price, close: trade.price });
           }
         });
+        if (this.markets[sym]) this.markets[sym].gotLive = true;
         this.dataSource = 'live';
         this.notifyListeners();
       }
       return;
     }
 
-    // Format 3: Full ticker with symbol field in data
+    // ---- Legacy Format 3: full ticker with symbol in msg.data ----
     if (msg.data && msg.data.symbol) {
       this.applyTickerObj(msg.data);
+      if (this.markets[msg.data.symbol]) this.markets[msg.data.symbol].gotLive = true;
       this.dataSource = 'live';
       this.notifyListeners();
       return;
     }
 
-    // Format 4: Direct message with symbol
+    // ---- Legacy Format 4: direct ticker with symbol field ----
     if (msg.symbol && (msg.mark_price !== undefined || msg.close !== undefined || msg.last_price !== undefined)) {
       this.applyTickerObj(msg);
+      if (this.markets[msg.symbol]) this.markets[msg.symbol].gotLive = true;
       this.dataSource = 'live';
       this.notifyListeners();
       return;
     }
 
-    // Format 5: Array of tickers
+    // ---- Legacy Format 5: top-level array of tickers ----
     if (Array.isArray(msg)) {
-      msg.forEach(t => this.applyTickerObj(t));
+      msg.forEach(t => { if (t && t.symbol) this.applyTickerObj(t); });
       this.dataSource = 'live';
       this.notifyListeners();
       return;
     }
 
-    // Format 6: Nested data structure with array
+    // ---- Legacy Format 6: nested data array ----
     if (msg.data && Array.isArray(msg.data)) {
-      msg.data.forEach(t => {
-        if (t.symbol) this.applyTickerObj(t);
-      });
+      msg.data.forEach(t => { if (t && t.symbol) this.applyTickerObj(t); });
       this.dataSource = 'live';
       this.notifyListeners();
       return;
     }
 
-    // Format 7: Compact ticker with sy field
+    // ---- Legacy Format 7: compact shape {sy, d:[{m},...]} (same as official ticker) ----
     if (msg.sy && Array.isArray(msg.d)) {
       const sym = msg.sy;
-      if (this.markets[sym]) {
-        const d = msg.d[0];
-        if (d) {
-          const mark = parseFloat(d.m);
-          if (isFinite(mark) && mark > 0) {
-            this.applyTickerObj({ symbol: sym, mark_price: mark });
-          }
-        }
+      const d = msg.d && msg.d[0];
+      if (this.markets[sym] && d) {
+        this.applyTickerObj({
+          symbol: sym,
+          mark_price: d.m,
+          mark_change_24h: d.m24hc,
+          quotes: { best_ask: (d.q && d.q[0]), best_bid: (d.q && d.q[2]) }
+        });
+        this.markets[sym].gotLive = true;
+        this.dataSource = 'live';
+        this.notifyListeners();
       }
-      this.dataSource = 'live';
-      this.notifyListeners();
       return;
     }
   }
 
   /**
-   * Generic API GET with proxy fallback chain
+   * Generic API GET with proxy-fallback chain.
+   * Each PROXY_CHAIN entry is a function `url => finalUrl` so direct,
+   * proxied, and CORS-proxied hops can coexist in config.js.
    */
   async apiGet(path) {
     const url = this.config.API_BASE + path;
+    const chain = Array.isArray(this.config.PROXY_CHAIN) && this.config.PROXY_CHAIN.length
+      ? this.config.PROXY_CHAIN
+      : [u => u];
     let lastErr = null;
 
-    // Try direct connection only (proxies return HTML errors)
-    for (let i = 0; i < this.config.PROXY_CHAIN.length; i++) {
+    for (let i = 0; i < chain.length; i++) {
+      let finalUrl;
+      try {
+        const hop = chain[i];
+        finalUrl = (typeof hop === 'function') ? hop(url) : (String(hop) + url);
+      } catch (e) {
+        lastErr = e;
+        continue;
+      }
+
       try {
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), 8000);
-        
-        // ✅ FIXED: Correctly evaluate the proxy function for the current index
-        const targetUrl = this.config.PROXY_CHAIN[i](url);
-        const r = await fetch(targetUrl, { signal: ctrl.signal });
+        const r = await fetch(finalUrl, { signal: ctrl.signal });
         clearTimeout(to);
 
         if (!r.ok) {
@@ -465,15 +485,18 @@ class MarketDataManager {
           continue;
         }
 
-        const j = await r.json();
+        let j;
+        try { j = await r.json(); }
+        catch (e) { lastErr = new Error('Invalid JSON'); continue; }
+
         if (j && j.success === false) {
           lastErr = new Error('API error: ' + (j.message || 'unknown'));
           continue;
         }
 
-        return j.result || j;
+        return (j && j.result !== undefined) ? j.result : j;
       } catch (e) {
-        DELTA_LOGGER.warn('[Market] API attempt', i+1, 'failed:', e.message);
+        DELTA_LOGGER.warn('[Market] API attempt', i + 1, 'failed:', e.message);
         lastErr = e;
       }
     }
@@ -481,74 +504,60 @@ class MarketDataManager {
     throw lastErr || new Error('Fetch failed');
   }
 
-  /**
-   * Determine decimal places for price display
-   */
+  checkHeartbeat() {
+    if (this.dataSource !== 'live') return;
+    if (!this.lastHeartbeat) return;
+    if (Date.now() - this.lastHeartbeat > 40000) {
+      DELTA_LOGGER.warn('[Market] No data for 40s, forcing reconnect...');
+      this.sockets.forEach(s => { try { s.ws && s.ws.close(); } catch (e) {} });
+      this.sockets = [];
+      this.connectAllWS();
+    }
+  }
+
   decFor(p) {
     if (p >= 10000) return 0;
-    if (p >= 1000) return 1;
-    if (p >= 100) return 2;
-    if (p >= 10) return 3;
-    if (p >= 1) return 4;
+    if (p >= 1000)  return 1;
+    if (p >= 100)   return 2;
+    if (p >= 10)    return 3;
+    if (p >= 1)     return 4;
     return 6;
   }
 
-  /**
-   * Get market data for a symbol
-   */
-  getMarket(symbol) {
-    return this.markets[symbol] || null;
-  }
+  getMarket(symbol) { return this.markets[symbol] || null; }
+  getAllMarkets()  { return this.markets; }
 
-  /**
-   * Get all markets
-   */
-  getAllMarkets() {
-    return this.markets;
-  }
-
-  /**
-   * Subscribe to market data updates
-   */
   subscribe(callback) {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
   }
 
-  /**
-   * Notify all listeners of data update - THROTTLED TO 60fps
-   */
+  /** Throttle to requestAnimationFrame (≈60 fps) */
   notifyListeners() {
     if (this.notifyRAF) return;
-    
     this.notifyRAF = requestAnimationFrame(() => {
       this.notifyRAF = null;
-      this.listeners.forEach(cb => cb(this.markets));
+      this.listeners.forEach(cb => { try { cb(this.markets); } catch (e) {} });
     });
   }
 
-  /**
-   * Get current data source status
-   */
-  getDataSource() {
-    return this.dataSource;
-  }
+  getDataSource() { return this.dataSource; }
 
-  /**
-   * Get update statistics
-   */
   getStats() {
+    const liveSockets = this.sockets.filter(s => s.ws && s.ws.readyState === 1).length;
+    const anyGotLive = Object.values(this.markets).some(m => m.gotLive);
     return {
       updates: this.updateCount,
       lastUpdate: this.lastUpdateTime,
       latency: this.lastUpdateTime ? Date.now() - this.lastUpdateTime : null,
+      lastHeartbeat: this.lastHeartbeat,
       source: this.dataSource,
-      sockets: this.sockets.filter(s => s.ws.readyState === 1).length
+      anyGotLive,
+      sockets: liveSockets
     };
   }
 }
 
-// Export for module systems
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = MarketDataManager;
 }

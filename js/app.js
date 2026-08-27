@@ -1,6 +1,10 @@
 /**
  * Delta Paper Trading - Main Application Module
  * Core application logic, UI rendering, and event handling
+ *
+ * Patched: added renderStatus() that drives the header "SYNC…" / "LIVE"
+ * chip and the market-panel feed badge from market.getStats(), and
+ * hardened renderHeader() against undefined balances on first paint.
  */
 
 class DeltaPaperApp {
@@ -9,18 +13,15 @@ class DeltaPaperApp {
     this.state = state;
     this.validator = validator;
     this.market = market;
-    
-    // DOM element cache
+
     this.$ = (id) => document.getElementById(id);
-    
-    // State references
+
     this.selSym = 'BTCUSD';
     this.curLots = 1;
     this.posDetailSym = null;
     this.cvtDir = 'i2u';
     this.hisLen = -1;
-    
-    // Bind methods
+
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
     this.switchSymbol = this.switchSymbol.bind(this);
@@ -30,45 +31,27 @@ class DeltaPaperApp {
     this.handleMenuAction = this.handleMenuAction.bind(this);
   }
 
-  /**
-   * Initialize the application
-   */
   async init() {
     DELTA_LOGGER.log('[App] Initializing...');
-    
-    // Subscribe to market data updates
     this.market.subscribe(() => this.markDirty());
-    
-    // Setup event listeners
     this.setupEventListeners();
-    
-    // Initial render
+
     this.curLots = this.getLots(this.selSym);
-    if (this.state.get().equityCurve.length === 0) {
-      this.sampleEq();
-    }
-    
+    if (this.state.get().equityCurve.length === 0) this.sampleEq();
+
     this.renderAll();
-    
-    // Start simulation loop
     this.startSimulationLoop();
-    
     DELTA_LOGGER.log('[App] Initialized successfully');
   }
 
-  /**
-   * Setup all event listeners
-   */
   setupEventListeners() {
-    // Trade buttons
     this.$('buyBtn').addEventListener('click', () => this.placeOrder(1));
     this.$('sellBtn').addEventListener('click', () => this.placeOrder(-1));
     this.$('closeAllBtn').addEventListener('click', () => this.closeAll());
 
-    // Quantity controls
     this.$('qtyMinus').addEventListener('click', () => this.stepLots(-1));
     this.$('qtyPlus').addEventListener('click', () => this.stepLots(1));
-    
+
     document.querySelectorAll('.qk button[data-q]').forEach(b => {
       b.addEventListener('click', () => {
         const q = b.dataset.q;
@@ -94,7 +77,6 @@ class DeltaPaperApp {
       this.openModal('menuOverlay');
     });
 
-    // Menu
     this.$('menuBtn').addEventListener('click', () => {
       this.renderMenu();
       this.openModal('menuOverlay');
@@ -143,7 +125,6 @@ class DeltaPaperApp {
       this.resetAccount();
     });
 
-    // Position detail
     this.$('pdSave').addEventListener('click', () => this.saveTpSl());
     this.$('pdClear').addEventListener('click', () => this.clearTpSl());
     this.$('pdClose').addEventListener('click', () => {
@@ -154,7 +135,6 @@ class DeltaPaperApp {
       }
     });
 
-    // Funds navigation
     this.$('convHintBtn').addEventListener('click', () => {
       this.renderCvt();
       this.openModal('cvtOverlay');
@@ -199,61 +179,49 @@ class DeltaPaperApp {
 
     this.$('depConfirm').addEventListener('click', () => this.doDeposit());
     this.$('wdMax').addEventListener('click', () => {
-      this.$('wdAmt').value = Math.floor(this.state.get().inr);
+      this.$('wdAmt').value = Math.floor(this.state.get().inr || 0);
     });
     this.$('wdConfirm').addEventListener('click', () => this.doWithdraw());
-    
+
     this.$('flipBtn').addEventListener('click', () => this.flipCvt());
-    
+
     this.$('cvtMax').addEventListener('click', () => {
       this.$('cvtAmt').value = (this.cvtDir === 'i2u' ? this.state.get().inr : this.state.get().usd).toFixed(2);
       this.renderCvtPreview();
     });
-    
+
     this.$('cvtAmt').addEventListener('input', () => this.renderCvtPreview());
     this.$('cvtConfirm').addEventListener('click', () => this.doConvert());
-    
+
     this.$('aNameSave').addEventListener('click', () => {
       const v = this.$('aNameInput').value.trim();
-      if (!v) {
-        return this.toast('Invalid name', 'Name cannot be empty', 'err');
-      }
+      if (!v) return this.toast('Invalid name', 'Name cannot be empty', 'err');
       this.state.update({ name: v });
       this.renderAcct();
       this.toast('Saved', 'Display name updated', 'ok');
     });
-    
+
     this.$('resetBtn2').addEventListener('click', () => this.resetAccount());
-    
+
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.market.getDataSource() === 'live') {
-        // Reconnect WebSocket if needed
+        // WS reconnect is automatic; nothing else to do
       }
     });
-    
+
     window.addEventListener('resize', () => {
-      if (this.$('acctOverlay').classList.contains('show')) {
-        this.drawEquityCurve();
-      }
+      if (this.$('acctOverlay') && this.$('acctOverlay').classList.contains('show')) this.drawEquityCurve();
     });
   }
 
-  /**
-   * Switch selected symbol
-   */
   switchSymbol(sym) {
     if (this.selSym === sym) return;
     this.selSym = sym;
     this.curLots = this.getLots(sym);
-    if (document.activeElement !== this.$('qtyIn')) {
-      this.$('qtyIn').value = this.curLots;
-    }
+    if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = this.curLots;
     this.markDirty();
   }
 
-  /**
-   * Adjust leverage
-   */
   adjustLeverage(delta) {
     const S = this.state.get();
     const newLev = Math.max(1, Math.min(this.config.MAX_LEVERAGE, S.lev + delta));
@@ -262,24 +230,17 @@ class DeltaPaperApp {
     this.markDirty();
   }
 
-  /**
-   * Execute trade (buy/sell)
-   */
-  executeTrade(side) {
-    this.placeOrder(side);
-  }
+  executeTrade(side) { this.placeOrder(side); }
 
-  /**
-   * Close position
-   */
   closePosition(sym, price) {
     const pos = this.state.get().positions[sym];
     if (!pos) return;
-    
+
     const m = this.market.getMarket(sym);
+    if (!m) return;
     const fill = pos.dir === 1 ? m.price * 0.9997 : m.price * 1.0003;
     const fee = pos.qty * fill * this.config.TAKER_FEE;
-    
+
     this.applyFill(sym, -pos.dir, fill, pos.qty, pos.lev, fee, pos.lots);
     const shortName = this.config.SYM_META[sym] ? this.config.SYM_META[sym].short : sym;
     this.toast('Closed', shortName + ' @ ' + this.fmtPrice(fill, m.dec), 'ok');
@@ -287,9 +248,6 @@ class DeltaPaperApp {
     this.markDirty();
   }
 
-  /**
-   * Handle menu actions
-   */
   handleMenuAction(action) {
     switch (action) {
       case 'funds':
@@ -311,17 +269,11 @@ class DeltaPaperApp {
     }
   }
 
-  /**
-   * Get lot size for symbol
-   */
   lotOf(sym) {
     const m = this.market.getMarket(sym);
-    return m ? m.lot : this.config.LOT_SIZES[sym] || 0.001;
+    return m ? m.lot : (this.config.LOT_SIZES[sym] || 0.001);
   }
 
-  /**
-   * Get default lots for symbol
-   */
   defaultLots(sym) {
     const m = this.market.getMarket(sym);
     if (m && m.price > 0) {
@@ -330,81 +282,52 @@ class DeltaPaperApp {
     return 1;
   }
 
-  /**
-   * Get current lots for symbol
-   */
   getLots(sym) {
     const S = this.state.get();
-    if (S.lots[sym] && S.lots[sym] >= 1) {
-      return Math.round(S.lots[sym]);
-    }
+    if (S.lots[sym] && S.lots[sym] >= 1) return Math.round(S.lots[sym]);
     return this.defaultLots(sym);
   }
 
-  /**
-   * Set lots
-   */
   setLots(l) {
     l = Math.max(1, Math.round(l));
     this.curLots = l;
     const S = this.state.get();
     const lots = { ...S.lots, [this.selSym]: l };
     this.state.update({ lots });
-    
-    if (document.activeElement !== this.$('qtyIn')) {
-      this.$('qtyIn').value = l;
-    }
+    if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = l;
     this.markDirty();
   }
 
-  /**
-   * Step lots up/down
-   */
-  stepLots(d) {
-    this.setLots(this.curLots + d);
-  }
+  stepLots(d) { this.setLots(this.curLots + d); }
 
-  /**
-   * Set max lots based on available margin
-   */
   setMaxLots() {
     const m = this.market.getMarket(this.selSym);
     if (!m || !(m.price > 0)) return;
-    
+
     const S = this.state.get();
-    if (!(S.usd > 0)) {
-      return this.toast('No margin', 'Convert INR → USD first', 'err');
-    }
-    
+    if (!(S.usd > 0)) return this.toast('No margin', 'Convert INR → USD first', 'err');
+
     const lots = Math.floor((S.usd * 0.99 * S.lev) / (this.lotOf(this.selSym) * m.price));
     this.setLots(Math.max(1, lots));
   }
 
-  /**
-   * Set lots by notional value
-   */
   setNotionalLots(usd) {
     const m = this.market.getMarket(this.selSym);
     if (!m || !(m.price > 0)) return;
     this.setLots(Math.max(1, Math.round(usd / (this.lotOf(this.selSym) * m.price))));
   }
 
-  /**
-   * Place order
-   */
   placeOrder(side) {
     const m = this.market.getMarket(this.selSym);
     if (!m) return;
-    
+
     if (!(m.price > 0)) {
       return this.toast('No live price yet', 'Waiting for Delta India feed…', 'err');
     }
-    
+
     const lots = this.curLots;
-    if (!(lots >= 1)) {
-      return this.toast('Set quantity', 'Minimum 1 lot', 'err');
-    }
-    
+    if (!(lots >= 1)) return this.toast('Set quantity', 'Minimum 1 lot', 'err');
+
     const S = this.state.get();
     const lev = S.lev;
     const lot = this.lotOf(this.selSym);
@@ -413,16 +336,16 @@ class DeltaPaperApp {
     const notional = qty * fill;
     const margin = notional / lev;
     const fee = notional * this.config.TAKER_FEE;
-    
+
     if (margin + fee > S.usd) {
       return this.toast('Insufficient USD', 'Need ' + this.fmtUsd(margin + fee) + ' $ — ☰ → Funds', 'err');
     }
-    
+
     if (this.applyFill(this.selSym, side, fill, qty, lev, fee, lots)) {
       const shortName = this.config.SYM_META[this.selSym] ? this.config.SYM_META[this.selSym].short : this.selSym;
       this.toast(
         'Filled ✓',
-        (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') + 
+        (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') +
         ' (' + this.fmtQty(qty) + ' ' + shortName + ') @ ' + this.fmtPrice(fill, m.dec),
         'ok'
       );
@@ -431,25 +354,21 @@ class DeltaPaperApp {
     }
   }
 
-  /**
-   * Apply fill to position
-   */
   applyFill(sym, side, price, qty, lev, fee, lots) {
     const S = this.state.get();
     let usd = S.usd;
     let feesTotal = S.feesTotal;
-    
+
     usd -= fee;
     feesTotal += fee;
-    
+
     const positions = { ...S.positions };
     const pos = positions[sym];
-    
+
     if (!pos) {
       const margin = price * qty / lev;
       if (usd < margin) {
-        usd += fee;
-        feesTotal -= fee;
+        usd += fee; feesTotal -= fee;
         this.toast('Rejected', 'Insufficient USD margin', 'err');
         return false;
       }
@@ -459,12 +378,11 @@ class DeltaPaperApp {
       this.state.update({ usd, feesTotal, positions });
       return true;
     }
-    
+
     if (side === pos.dir) {
       const addM = price * qty / lev;
       if (usd < addM) {
-        usd += fee;
-        feesTotal -= fee;
+        usd += fee; feesTotal -= fee;
         this.toast('Rejected', 'Insufficient USD margin', 'err');
         return false;
       }
@@ -473,7 +391,7 @@ class DeltaPaperApp {
       const entry = (pos.entry * pos.qty + price * qty) / nq;
       const newMargin = pos.margin + addM;
       const newLev = Math.max(1, (entry * nq) / newMargin);
-      
+
       positions[sym] = {
         ...pos,
         qty: nq,
@@ -486,23 +404,22 @@ class DeltaPaperApp {
       this.state.update({ usd, feesTotal, positions });
       return true;
     }
-    
-    // Closing/reducing position
+
     const closeQty = Math.min(qty, pos.qty);
     const ratio = closeQty / pos.qty;
     const realized = (price - pos.entry) * closeQty * pos.dir;
     const mRel = pos.margin * ratio;
-    
+
     usd += mRel + realized;
-    
+
     const remainingQty = pos.qty - closeQty;
     const remainingMargin = pos.margin - mRel;
     const remainingLots = Math.max(0, pos.lots - Math.round(pos.lots * ratio));
-    
+
     const net = realized - fee;
     this.recordClose(net);
     this.pushHist(sym, pos.dir === 1 ? 'Close Long' : 'Close Short', closeQty, price, net);
-    
+
     let finalPositions = positions;
     if (remainingQty < 1e-9) {
       delete finalPositions[sym];
@@ -514,66 +431,47 @@ class DeltaPaperApp {
         lots: remainingLots
       };
     }
-    
+
     const remaining = qty - closeQty;
     if (remaining > 1e-9) {
       const margin = price * remaining / lev;
       if (usd >= margin) {
         usd -= margin;
         finalPositions[sym] = {
-          sym,
-          dir: side,
+          sym, dir: side,
           lots: Math.max(1, remainingLots),
           qty: remaining,
           entry: price,
-          margin,
-          lev,
-          tp: 0,
-          sl: 0
+          margin, lev,
+          tp: 0, sl: 0
         };
         this.pushHist(sym, side === 1 ? 'Flip Long' : 'Flip Short', remaining, price, 0);
       }
     }
-    
+
     this.state.update({ usd, feesTotal, positions: finalPositions });
     return true;
   }
 
-  /**
-   * Close all positions
-   */
   closeAll() {
     const S = this.state.get();
     const syms = Object.keys(S.positions);
-    if (!syms.length) {
-      return this.toast('Nothing to close', 'No open positions', 'err');
-    }
+    if (!syms.length) return this.toast('Nothing to close', 'No open positions', 'err');
     syms.slice().forEach(sym => this.closePosition(sym));
   }
 
-  /**
-   * Record closed position stats
-   */
   recordClose(net) {
     const S = this.state.get();
-    let realized = S.realized;
-    let wins = S.wins;
-    let losses = S.losses;
-    let best = S.best;
-    let worst = S.worst;
-    
+    let realized = S.realized, wins = S.wins, losses = S.losses;
+    let best = S.best, worst = S.worst;
     realized += net;
     if (net > 0) wins++;
     else if (net < 0) losses++;
     best = Math.max(best, net);
     worst = Math.min(worst, net);
-    
     this.state.update({ realized, wins, losses, best, worst });
   }
 
-  /**
-   * Push history entry
-   */
   pushHist(sym, label, qty, price, pnl) {
     const S = this.state.get();
     const history = [{ t: Date.now(), sym, label, qty, price, pnl }, ...S.history];
@@ -581,57 +479,36 @@ class DeltaPaperApp {
     this.state.update({ history });
   }
 
-  /**
-   * Check TP/SL triggers
-   */
   checkTPSL() {
     const S = this.state.get();
     for (const k in S.positions) {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
       if (!m || !(m.price > 0)) continue;
-      
+
       if (pos.dir === 1) {
-        if (pos.tp && m.price >= pos.tp) {
-          this.closeAtTrigger(pos, 'TP hit', pos.tp);
-          continue;
-        }
-        if (pos.sl && m.price <= pos.sl) {
-          this.closeAtTrigger(pos, 'SL hit', pos.sl);
-        }
+        if (pos.tp && m.price >= pos.tp) { this.closeAtTrigger(pos, 'TP hit', pos.tp); continue; }
+        if (pos.sl && m.price <= pos.sl) { this.closeAtTrigger(pos, 'SL hit', pos.sl); }
       } else {
-        if (pos.tp && m.price <= pos.tp) {
-          this.closeAtTrigger(pos, 'TP hit', pos.tp);
-          continue;
-        }
-        if (pos.sl && m.price >= pos.sl) {
-          this.closeAtTrigger(pos, 'SL hit', pos.sl);
-        }
+        if (pos.tp && m.price <= pos.tp) { this.closeAtTrigger(pos, 'TP hit', pos.tp); continue; }
+        if (pos.sl && m.price >= pos.sl) { this.closeAtTrigger(pos, 'SL hit', pos.sl); }
       }
     }
   }
 
-  /**
-   * Check liquidations
-   */
   checkLiquidations() {
     const S = this.state.get();
     const hits = [];
-    
     for (const k in S.positions) {
       if (!this.market.getMarket(k)) continue;
       const pos = S.positions[k];
       const lp = this.liqPrice(pos);
-      const p = this.market.getMarket(k).price;
-      
-      if ((pos.dir === 1 && p <= lp) || (pos.dir === -1 && p >= lp)) {
-        hits.push(k);
-      }
+      const p  = this.market.getMarket(k).price;
+      if ((pos.dir === 1 && p <= lp) || (pos.dir === -1 && p >= lp)) hits.push(k);
     }
-    
     if (!hits.length) return;
-    
-    // ✅ FIXED: Batch updates
+
+    // Batch updates
     let positions = { ...S.positions };
     let losses = S.losses;
     let worst = S.worst;
@@ -640,97 +517,85 @@ class DeltaPaperApp {
     hits.forEach(k => {
       const pos = positions[k];
       delete positions[k];
-      
+
       losses += 1;
       worst = Math.min(worst, -pos.margin);
-      
+
+      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
       history.unshift({ t: Date.now(), sym: k, label: '⚡ Liquidated', qty: pos.qty, price: this.liqPrice(pos), pnl: -pos.margin });
       if (history.length > 50) history.length = 50;
-      
-      this.toast('LIQUIDATED', '⚡ ' + this.market.getMarket(k).short + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
+
+      this.toast('LIQUIDATED', '⚡ ' + shortName + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
     });
-    
-    // ✅ FIXED: Single state update for all liquidations in this tick
+
+    // Single state update for all liquidations in this tick
     this.state.update({ positions, losses, worst, history });
     this.flushSave(true);
-    
-    if (this.posDetailSym && !this.state.get().positions[this.posDetailSym]) {
+
+    if (this.posDetailSym && !S.positions[this.posDetailSym]) {
       this.posDetailSym = null;
       this.closeModal('posOverlay');
     }
   }
 
-  /**
-   * Calculate liquidation price
-   */
   liqPrice(pos) {
     const mm = 0.005;
-    return pos.dir === 1 
+    return pos.dir === 1
       ? pos.entry * (1 - 1 / pos.lev + mm)
       : pos.entry * (1 + 1 / pos.lev - mm);
   }
 
-  /**
-   * Close position at trigger price
-   */
   closeAtTrigger(pos, label, price) {
     const m = this.market.getMarket(pos.sym);
     const fee = pos.qty * price * this.config.TAKER_FEE;
     this.applyFill(pos.sym, -pos.dir, price, pos.qty, pos.lev, fee, pos.lots);
-    
+
     const S = this.state.get();
     if (S.history.length) {
       const history = [...S.history];
       history[0].label = label;
       this.state.update({ history });
     }
-    
+
     const shortName = this.config.SYM_META[pos.sym] ? this.config.SYM_META[pos.sym].short : pos.sym;
-    this.toast(label, shortName + ' closed @ ' + this.fmtPrice(price, m.dec), label === 'TP hit' ? 'ok' : 'err');
+    this.toast(label, shortName + ' closed @ ' + this.fmtPrice(price, m.dec),
+      label === 'TP hit' ? 'ok' : 'err');
     this.flushSave(true);
   }
 
-  /**
-   * Open position detail modal
-   */
   openPosDetail(sym) {
     const S = this.state.get();
     if (!S.positions[sym]) return;
-    
+
     this.posDetailSym = sym;
     const pos = S.positions[sym];
     const m = this.market.getMarket(sym);
-    
+
     const t = this.$('pdTitle');
-    // ✅ FIXED: Safely construct the title
+    // Safely construct the title
+    t.innerHTML = '';
     const sideTag = document.createElement('span');
     sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
-    sideTag.textContent = (pos.dir === 1 ? 'LONG ' : 'SHORT ') + pos.lev + 'x';
-    
+    sideTag.textContent = (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x';
     const symText = document.createTextNode(' ' + m.short);
-    
-    t.innerHTML = ''; // Clear existing
     t.appendChild(sideTag);
     t.appendChild(symText);
-    
+
     this.$('pdEntry').textContent = this.fmtPrice(pos.entry, m.dec);
-    this.$('pdQty').textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
+    this.$('pdQty').textContent  = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
     this.$('pdMargin').textContent = this.fmtUsd(pos.margin) + ' $';
-    this.$('pdLiq').textContent = this.fmtPrice(this.liqPrice(pos), m.dec);
-    
+    this.$('pdLiq').textContent    = this.fmtPrice(this.liqPrice(pos), m.dec);
+
     this.$('pdTpIn').value = pos.tp ? pos.tp : '';
     this.$('pdSlIn').value = pos.sl ? pos.sl : '';
-    
+
     this.renderPosDetailLive();
     this.openModal('posOverlay');
   }
 
-  /**
-   * Render position detail live data
-   */
   renderPosDetailLive() {
     if (!this.posDetailSym || !this.$('posOverlay').classList.contains('show')) return;
-    
+
     const S = this.state.get();
     const pos = S.positions[this.posDetailSym];
     if (!pos) {
@@ -738,172 +603,145 @@ class DeltaPaperApp {
       this.closeModal('posOverlay');
       return;
     }
-    
+
     const m = this.market.getMarket(this.posDetailSym);
     const up = (m.price - pos.entry) * pos.qty * pos.dir;
-    
+
     this.$('pdMark').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
     this.$('pdUpnl').textContent = this.fmtSign(up) + ' $';
     this.$('pdUpnl').className = up >= 0 ? 'pos' : 'neg';
   }
 
-  /**
-   * Save TP/SL settings
-   */
   saveTpSl() {
     const S = this.state.get();
     const pos = S.positions[this.posDetailSym];
     if (!pos) return;
-    
+
     const m = this.market.getMarket(this.posDetailSym);
     const tpRaw = parseFloat(this.$('pdTpIn').value);
     const slRaw = parseFloat(this.$('pdSlIn').value);
     const hasTp = isFinite(tpRaw) && tpRaw > 0;
     const hasSl = isFinite(slRaw) && slRaw > 0;
-    const mark = m.price;
-    
-    if (!(mark > 0)) {
-      return this.toast('No live price', 'Waiting for feed…', 'err');
-    }
-    
+    const mark  = m.price;
+
+    if (!(mark > 0)) return this.toast('No live price', 'Waiting for feed…', 'err');
+
     if (hasTp) {
       if ((pos.dir === 1 && tpRaw <= mark) || (pos.dir === -1 && tpRaw >= mark)) {
         return this.toast('Invalid TP', 'Long TP must be above mark (' + this.fmtPxShort(mark) + ')', 'err');
       }
     }
-    
     if (hasSl) {
       if ((pos.dir === 1 && slRaw >= mark) || (pos.dir === -1 && slRaw <= mark)) {
         return this.toast('Invalid SL', 'Long SL must be below mark (' + this.fmtPxShort(mark) + ')', 'err');
       }
     }
-    
     if (hasTp && hasSl && tpRaw === slRaw) {
       return this.toast('Invalid TP/SL', 'TP and SL cannot be equal', 'err');
     }
-    
+
     const positions = { ...S.positions };
     positions[this.posDetailSym] = {
       ...pos,
       tp: hasTp ? tpRaw : 0,
       sl: hasSl ? slRaw : 0
     };
-    
+
     this.state.update({ positions });
     this.flushSave(true);
-    
-    const txt = (pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') + 
-      (pos.tp && pos.sl ? ' • ' : '') + 
+
+    const txt = (pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
+      (pos.tp && pos.sl ? ' • ' : '') +
       (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : '');
-    
+
     this.toast('Saved ✓', txt || 'TP/SL cleared', 'ok');
     this.markDirty();
   }
 
-  /**
-   * Clear TP/SL settings
-   */
   clearTpSl() {
     const S = this.state.get();
     const pos = S.positions[this.posDetailSym];
     if (!pos) return;
-    
+
     const positions = { ...S.positions };
     positions[this.posDetailSym] = { ...pos, tp: 0, sl: 0 };
-    
     this.state.update({ positions });
     this.$('pdTpIn').value = '';
     this.$('pdSlIn').value = '';
-    
     this.flushSave(true);
     this.toast('Cleared', 'TP/SL removed', '');
     this.markDirty();
   }
 
-  /**
-   * Do deposit
-   */
   doDeposit() {
     const amt = parseFloat(this.$('depAmt').value);
     if (!isFinite(amt) || amt < this.config.MIN_DEPOSIT) {
       return this.toast('Invalid amount', 'Minimum deposit is ₹' + this.config.MIN_DEPOSIT, 'err');
     }
-    
+
     const method = document.querySelector('#depMethods label.on').dataset.m;
     const S = this.state.get();
-    
+
     this.state.update({ inr: S.inr + amt });
     this.ledgerPush('Deposit', method, amt, 0);
     this.sampleEq();
     this.flushSave(true);
     this.renderFunds();
     this.markDirty();
-    
+
     this.toast('Deposit ✓', this.fmtInr(amt) + ' credited via ' + method, 'ok');
     this.closeModal('depOverlay');
     this.$('depAmt').value = '';
   }
 
-  /**
-   * Do withdraw
-   */
   doWithdraw() {
     const amt = parseFloat(this.$('wdAmt').value);
     const S = this.state.get();
-    
+
     if (!isFinite(amt) || amt < this.config.MIN_WITHDRAW) {
       return this.toast('Invalid amount', 'Minimum withdrawal is ₹' + this.config.MIN_WITHDRAW, 'err');
     }
     if (amt > S.inr) {
       return this.toast('Insufficient INR', 'Available: ' + this.fmtInr(S.inr), 'err');
     }
-    
+
     this.state.update({ inr: S.inr - amt });
     this.ledgerPush('Withdraw', 'HDFC ••1234', -amt, 0);
     this.sampleEq();
     this.flushSave(true);
     this.renderFunds();
     this.markDirty();
-    
+
     this.toast('Withdrawal ✓', this.fmtInr(amt) + ' sent to HDFC ••1234', 'ok');
     this.closeModal('wdOverlay');
     this.$('wdAmt').value = '';
   }
 
-  /**
-   * Flip conversion direction
-   */
   flipCvt() {
     this.cvtDir = this.cvtDir === 'i2u' ? 'u2i' : 'i2u';
     this.$('cvtAmt').value = '';
     this.renderCvt();
   }
 
-  /**
-   * Render conversion modal
-   */
   renderCvt() {
     const i2u = this.cvtDir === 'i2u';
     const S = this.state.get();
-    
+
     this.$('cvtFromL').textContent = i2u ? '₹ INR' : 'USD';
-    this.$('cvtToL').textContent = i2u ? 'USD' : '₹ INR';
-    this.$('cvtCur').textContent = i2u ? 'INR' : 'USD';
+    this.$('cvtToL').textContent   = i2u ? 'USD' : '₹ INR';
+    this.$('cvtCur').textContent   = i2u ? 'INR' : 'USD';
     this.$('cvtAvail').textContent = i2u ? this.fmtInr(S.inr) : this.fmtUsd(S.usd) + ' USD';
-    
+
     this.renderCvtPreview();
   }
 
-  /**
-   * Render conversion preview
-   */
   renderCvtPreview() {
-    const amt = parseFloat(this.$('cvtAmt').value) || 0;
+    const amt  = parseFloat(this.$('cvtAmt').value) || 0;
     const rate = this.state.rate || this.config.BASE_RATE;
-    const i2u = this.cvtDir === 'i2u';
-    
+    const i2u  = this.cvtDir === 'i2u';
+
     this.$('cvtRate').textContent = '1 USD = ₹' + rate.toFixed(2);
-    
+
     let recv = 0, fee = 0;
     if (amt > 0) {
       if (i2u) {
@@ -914,43 +752,34 @@ class DeltaPaperApp {
         recv = amt * rate * (1 - this.config.CONVERT_FEE);
       }
     }
-    
+
     this.$('cvtFee').textContent = i2u ? this.fmtInr(fee) : this.fmtUsd(fee) + ' USD';
-    this.$('cvtRecv').textContent = recv > 0 
+    this.$('cvtRecv').textContent = recv > 0
       ? (i2u ? this.fmtUsd(recv) + ' USD' : this.fmtInr(recv))
       : '—';
   }
 
-  /**
-   * Do conversion
-   */
   doConvert() {
-    const amt = parseFloat(this.$('cvtAmt').value);
+    const amt  = parseFloat(this.$('cvtAmt').value);
     const rate = this.state.rate || this.config.BASE_RATE;
     const S = this.state.get();
-    
-    if (!isFinite(amt) || amt <= 0) {
-      return this.toast('Invalid amount', 'Enter an amount', 'err');
-    }
-    
+
+    if (!isFinite(amt) || amt <= 0) return this.toast('Invalid amount', 'Enter an amount', 'err');
+
     if (this.cvtDir === 'i2u') {
-      if (amt > S.inr) {
-        return this.toast('Insufficient INR', 'Available: ' + this.fmtInr(S.inr), 'err');
-      }
+      if (amt > S.inr) return this.toast('Insufficient INR', 'Available: ' + this.fmtInr(S.inr), 'err');
       const recv = (amt - amt * this.config.CONVERT_FEE) / rate;
       this.state.update({ inr: S.inr - amt, usd: S.usd + recv });
       this.ledgerPush('Convert', 'INR→USD', -amt, recv);
       this.toast('Converted ✓', this.fmtInr(amt) + ' → ' + this.fmtUsd(recv) + ' USD', 'ok');
     } else {
-      if (amt > S.usd) {
-        return this.toast('Insufficient USD', 'Available: ' + this.fmtUsd(S.usd) + ' USD', 'err');
-      }
+      if (amt > S.usd) return this.toast('Insufficient USD', 'Available: ' + this.fmtUsd(S.usd) + ' USD', 'err');
       const recv = amt * rate * (1 - this.config.CONVERT_FEE);
       this.state.update({ usd: S.usd - amt, inr: S.inr + recv });
       this.ledgerPush('Convert', 'USD→INR', recv, -amt);
       this.toast('Converted ✓', this.fmtUsd(amt) + ' USD → ' + this.fmtInr(recv), 'ok');
     }
-    
+
     this.sampleEq();
     this.flushSave(true);
     this.renderCvt();
@@ -958,9 +787,6 @@ class DeltaPaperApp {
     this.closeModal('cvtOverlay');
   }
 
-  /**
-   * Push ledger entry
-   */
   ledgerPush(type, detail, dInr, dUsd) {
     const S = this.state.get();
     const ledger = [{ t: Date.now(), type, detail, dInr, dUsd }, ...S.ledger];
@@ -968,35 +794,25 @@ class DeltaPaperApp {
     this.state.update({ ledger });
   }
 
-  /**
-   * Reset account
-   */
   resetAccount() {
     if (!confirm('Reset account? Everything will be wiped.')) return;
-    
     this.state.reset();
     this.hisLen = -1;
     this.flushSave(true);
     this.renderAcct();
     this.markDirty();
-    
     this.toast('Reset ✓', 'Balance: ' + this.fmtInr(this.config.START_INR), 'ok');
   }
 
-  /**
-   * Sample equity curve
-   */
   sampleEq() {
     const S = this.state.get();
-    const eqInr = S.inr + this.totals().equity * (this.state.rate || this.config.BASE_RATE);
+    const rate = this.state.rate || this.config.BASE_RATE;
+    const eqInr = (S.inr || 0) + (this.totals().equity || 0) * rate;
     const equityCurve = [...S.equityCurve, { t: Date.now(), e: eqInr }];
     if (equityCurve.length > 100) equityCurve.shift();
     this.state.update({ equityCurve });
   }
 
-  /**
-   * Calculate totals
-   */
   totals() {
     const S = this.state.get();
     let equity = 0;
@@ -1010,185 +826,112 @@ class DeltaPaperApp {
     return { equity };
   }
 
-  /**
-   * Get locked USD
-   */
   lockedUsd() {
     const S = this.state.get();
     let locked = 0;
-    for (const k in S.positions) {
-      locked += S.positions[k].margin;
-    }
+    for (const k in S.positions) locked += S.positions[k].margin;
     return locked;
   }
 
-  /**
-   * Format helpers
-   */
-  fmtUsd(x) {
-    return Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  
-  fmtUsd0(x) {
-    return Number(x).toLocaleString('en-US', { maximumFractionDigits: 0 });
-  }
-  
-  fmtSign(x) {
-    return (x >= 0 ? '+' : '') + this.fmtUsd(x);
-  }
-  
-  fmtInr(x) {
-    return '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-  }
-  
-  fmtInrS(x) {
-    return (x >= 0 ? '+' : '-') + '₹' + Math.abs(x).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-  }
-  
-  fmtPrice(p, dec) {
-    return Number(p).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  }
-  
-  fmtPxShort(p) {
-    if (p >= 1000) return (p / 1000).toFixed(2) + 'k';
-    if (p >= 1) return p.toFixed(2);
-    return p.toFixed(4);
-  }
-  
-  fmtQty(q) {
-    let s = q.toFixed(6);
-    s = s.replace(/0+$/, '').replace(/\.$/, '');
-    return s;
-  }
-  
-  fmtLot(lot) {
-    let s = lot.toFixed(6);
-    s = s.replace(/0+$/, '').replace(/\.$/, '');
-    return s;
-  }
+  fmtUsd(x)    { return Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  fmtUsd0(x)   { return Number(x).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+  fmtSign(x)   { return (x >= 0 ? '+' : '') + this.fmtUsd(x); }
+  fmtInr(x)    { return '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+  fmtInrS(x)   { return (x >= 0 ? '+' : '-') + '₹' + Math.abs(x).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+  fmtPrice(p, d){ return Number(p).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  fmtPxShort(p){ if (p >= 1000) return (p/1000).toFixed(2)+'k'; if (p >= 1) return p.toFixed(2); return p.toFixed(4); }
+  fmtQty(q)    { let s = q.toFixed(6); return s.replace(/0+$/, '').replace(/\.$/, ''); }
+  fmtLot(lot)  { let s = lot.toFixed(6); return s.replace(/0+$/, '').replace(/\.$/, ''); }
 
-  /**
-   * Toast notification
-   */
   toast(title, msg, type) {
     const container = this.$('toasts');
+    if (!container) return;
     const div = document.createElement('div');
     div.className = 'toast' + (type ? ' ' + type : '');
-    
-    // ✅ FIXED: Create elements safely instead of using innerHTML
     const titleEl = document.createElement('b');
     titleEl.textContent = title;
-    
     const msgEl = document.createElement('small');
     msgEl.textContent = msg;
-    
     div.appendChild(titleEl);
     div.appendChild(document.createElement('br'));
     div.appendChild(msgEl);
-    
     container.appendChild(div);
     setTimeout(() => div.remove(), 4000);
   }
 
-  /**
-   * Modal helpers
-   */
-  openModal(id) {
-    this.$(id).classList.add('show');
-  }
-  
-  closeModal(id) {
-    this.$(id).classList.remove('show');
-    if (id === 'posOverlay') this.posDetailSym = null;
-  }
+  openModal(id)  { if (this.$(id)) this.$(id).classList.add('show'); }
+  closeModal(id) { if (this.$(id)) this.$(id).classList.remove('show'); if (id === 'posOverlay') this.posDetailSym = null; }
 
-  /**
-   * Mark dirty for render
-   */
-  markDirty() {
-    requestAnimationFrame(() => this.renderAll());
-  }
+  markDirty() { requestAnimationFrame(() => this.renderAll()); }
+  flushSave(force) { this.state.save(); }
 
-  /**
-   * Flush save
-   */
-  flushSave(force) {
-    this.state.save();
-  }
-
-  /**
-   * Start simulation loop
-   */
   startSimulationLoop() {
     setInterval(() => {
       this.checkTPSL();
       this.checkLiquidations();
-      // ✅ FIXED: Removed sampleEq() and flushSave() to prevent localStorage spam and UI jank.
-      // State is already saved automatically on discrete actions via this.state.update().
-      this.markDirty(); // Only re-render, do not spam save/equity sampling
+      this.markDirty();
     }, 1000);
   }
 
-  /**
-   * Render all UI components
-   */
   renderAll() {
+    this.renderStatus();   // <-- NEW: drive the feed / chip badges
     this.renderHeader();
     this.renderMarkets();
     this.renderQty();
     this.renderEntry();
     this.renderPositions();
     this.renderPosDetailLive();
-    this.renderFeedStatus();
     this.renderHistory();
     this.renderFunds();
     this.renderMenu();
-    
-    if (this.$('cvtOverlay').classList.contains('show')) {
+
+    if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) {
       this.renderCvtPreview();
     }
   }
 
-  /**
-   * Render feed status indicators (SYNC/LIVE chips and dots)
-   */
-  renderFeedStatus() {
-    const st = this.market.getStats();
-    const markets = this.market.getAllMarkets();
-    const live = Object.values(markets).some(m => m.gotLive);
-    const fresh = st.lastUpdate && (Date.now() - st.lastUpdate < 10000);
-    const txt = !fresh ? 'Connecting…' : (st.sockets > 0 ? 'LIVE • WS' : 'LIVE • REST');
-    
-    const feedText = this.$('feedText');
-    const chipText = this.$('chipText');
-    const feedDot = this.$('feedDot');
-    const chipDot = this.$('chipDot');
-    
-    if (feedText) feedText.textContent = txt;
-    if (chipText) chipText.textContent = live ? 'LIVE' : 'SYNC…';
-    if (feedDot) feedDot.classList.toggle('on', !!fresh);
-    if (chipDot) chipDot.classList.toggle('on', live);
+  /** NEW: drive the header chip ("SYNC…"/"LIVE"/"REST"/"SIM") and the
+   *  market-panel feed badge from live market-data state. Inline colors
+   *  are applied so it works regardless of styles.css coverage. */
+  renderStatus() {
+    const stats = (typeof this.market.getStats === 'function') ? this.market.getStats() : {};
+    const src   = stats.source || 'boot';
+    const live  = stats.anyGotLive === true || src === 'live';
+
+    let label, cls, color;
+    if (live)                 { label = 'LIVE';   cls = 'live'; color = '#22c55e'; }
+    else if (src === 'rest')  { label = 'REST';   cls = 'rest'; color = '#f59e0b'; }
+    else if (src === 'sim')   { label = 'SIM';    cls = 'sim';  color = '#a78bfa'; }
+    else                      { label = 'SYNC…';  cls = 'boot'; color = '#94a3b8'; }
+
+    const apply = (dotId, textId) => {
+      const d = this.$(dotId);
+      const t = this.$(textId);
+      if (d) {
+        d.className = 'feed-dot ' + cls;
+        d.style.background = color;
+        d.style.boxShadow  = '0 0 6px ' + color;
+      }
+      if (t) t.textContent = label;
+    };
+
+    apply('chipDot', 'chipText');
+    apply('feedDot',     'feedText');
   }
 
-  /**
-   * Render header
-   */
   renderHeader() {
     const S = this.state.get();
     const t = this.totals();
-    const eqInr = S.inr + t.equity * (this.state.rate || this.config.BASE_RATE);
-    
+    const rate = this.state.rate || this.config.BASE_RATE;
+    const eqInr = (S.inr || 0) + (t.equity || 0) * rate;
     this.$('hEquity').textContent = this.fmtInr(eqInr);
-    this.$('hBalSub').textContent = 'Free ' + this.fmtUsd(S.usd) + ' $';
+    this.$('hBalSub').textContent = 'Free ' + this.fmtUsd(S.usd || 0) + ' $';
   }
 
-  /**
-   * Render markets
-   */
   renderMarkets() {
     const wrap = this.$('symRow');
     if (wrap.childElementCount !== this.config.SYMBOLS.length) {
-      wrap.replaceChildren();
+      wrap.innerHTML = '';
       this.config.SYMBOLS.forEach(sym => {
         const b = document.createElement('button');
         b.className = 'sym-btn';
@@ -1197,73 +940,61 @@ class DeltaPaperApp {
         wrap.appendChild(b);
       });
     }
-    
+
     const buttons = wrap.querySelectorAll('.sym-btn');
     buttons.forEach((b, i) => {
       const sym = this.config.SYMBOLS[i];
-      if (sym === this.selSym) {
-        if (!b.classList.contains('on')) b.classList.add('on');
-      } else if (b.classList.contains('on')) {
-        b.classList.remove('on');
-      }
+      if (sym === this.selSym) { if (!b.classList.contains('on')) b.classList.add('on'); }
+      else if (b.classList.contains('on')) { b.classList.remove('on'); }
     });
-    
+
     const m = this.market.getMarket(this.selSym);
     if (!m) return;
-    
+
     this.$('mktTitle').textContent = m.symbol + ' • PERP';
     this.$('lotLabel').textContent = '1 lot = ' + this.fmtLot(m.lot) + ' ' + this.config.SYM_META[this.selSym].short;
     this.$('psPrice').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
-    this.$('psPrice').className = 'ps-price ' + (m.price >= m.prevPrice ? 'pos' : 'neg');
-    
+    this.$('psPrice').className = 'ps-price ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
+
     const chg = this.chgOf(m);
     this.$('psChg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
     this.$('psChg').className = 'ps-chg ' + (chg >= 0 ? 'up' : 'dn');
-    
-    this.$('psFund').textContent = m.funding 
+
+    this.$('psFund').textContent = m.funding
       ? 'Fund ' + (m.funding >= 0 ? '+' : '') + (m.funding * 100).toFixed(4) + '%'
       : '';
   }
 
-  /**
-   * Get change percentage
-   */
   chgOf(m) {
     if (m.chg24 != null && isFinite(m.chg24)) return m.chg24;
     if (m.open24 > 0 && m.price > 0) return (m.price - m.open24) / m.open24 * 100;
     return 0;
   }
 
-  /**
-   * Render quantity section
-   */
   renderQty() {
     const S = this.state.get();
     this.$('qtyLevRt').textContent = S.lev + 'x ⚙';
-    
+
     if (document.activeElement !== this.$('qtyIn')) {
       this.$('qtyIn').value = this.curLots >= 1 ? this.curLots : '';
     }
-    
+
     const m = this.market.getMarket(this.selSym);
     if (!m || !(m.price > 0) || !(this.curLots >= 1)) {
       this.$('qtyInfo').textContent = '—';
       return;
     }
-    
+
     const lot = this.lotOf(this.selSym);
     const qty = this.curLots * lot;
     const notional = qty * m.price;
     const margin = notional / S.lev;
-    
-    this.$('qtyInfo').textContent = this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') + 
-      ' = ' + this.fmtQty(qty) + ' ' + this.config.SYM_META[this.selSym].short + 
+
+    this.$('qtyInfo').textContent = this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') +
+      ' = ' + this.fmtQty(qty) + ' ' + this.config.SYM_META[this.selSym].short +
       ' ≈ $' + this.fmtUsd0(notional) + ' • margin $' + this.fmtUsd(margin);
   }
 
-  /**
-   * Render entry buttons
-   */
   renderEntry() {
     const S = this.state.get();
     const sub = (this.curLots >= 1) ? (this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') + ' • ' + S.lev + 'x') : '—';
@@ -1272,99 +1003,97 @@ class DeltaPaperApp {
     this.$('convHint').style.display = (S.usd < 5 && S.inr >= 1) ? 'flex' : 'none';
   }
 
-  /**
-   * Render positions
-   */
   renderPositions() {
     const S = this.state.get();
     const keys = Object.keys(S.positions);
-    
+
     this.$('cntPos').textContent = String(keys.length);
     this.$('posEmpty').style.display = keys.length ? 'none' : 'block';
-    
+
     const list = this.$('posList');
     if (keys.length === 0) {
       list.replaceChildren();
       return;
     }
-    
+
     const fragment = document.createDocumentFragment();
     keys.forEach(k => {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
       const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
-      
+
       const card = document.createElement('div');
       card.className = 'pos-card';
       card.dataset.sym = k;
-      
+
       // Row 1
       const row1 = document.createElement('div');
       row1.className = 'pc-row1';
-      
+
       const sideTag = document.createElement('span');
       sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
       sideTag.textContent = (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x';
-      
+
       const symEl = document.createElement('span');
       symEl.className = 'pc-sym';
       symEl.textContent = shortName;
-      
+
       const qtyEl = document.createElement('span');
       qtyEl.className = 'pc-qty';
       qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
-      
+
       const upnlEl = document.createElement('span');
       upnlEl.className = 'pc-upnl';
       upnlEl.textContent = '—';
-      
+
       row1.append(sideTag, symEl, qtyEl, upnlEl);
-      
+
       // Row 2
       const row2 = document.createElement('div');
       row2.className = 'pc-row2';
-      
+
       const inEl = document.createElement('span');
       inEl.dataset.in = '';
       inEl.textContent = 'In ' + this.fmtPxShort(pos.entry);
-      
+
       const mkEl = document.createElement('span');
       mkEl.dataset.mk = '';
       mkEl.textContent = 'Mk —';
-      
+
       const tpSlEl = document.createElement('span');
       tpSlEl.className = 'pc-tpsl';
-      tpSlEl.textContent = (pos.tp || pos.sl)
-        ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') + 
-           (pos.tp && pos.sl ? ' • ' : '') + 
+      const tpSlTxt = (pos.tp || pos.sl)
+        ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
+           (pos.tp && pos.sl ? ' • ' : '') +
            (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : ''))
         : '';
-      
+      tpSlEl.textContent = tpSlTxt;
+
       const arrowEl = document.createElement('span');
       arrowEl.className = 'pc-arrow';
       arrowEl.textContent = '›';
-      
+
       row2.append(inEl, mkEl, tpSlEl, arrowEl);
-      
+
       card.append(row1, row2);
       card.addEventListener('click', () => this.openPosDetail(k));
       fragment.appendChild(card);
     });
-    
+
     list.replaceChildren(fragment);
-    
+
     // Update P&L
     keys.forEach(k => {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
+      if (!m) return;
       const up = (m.price - pos.entry) * pos.qty * pos.dir;
       const roe = up / pos.margin * 100;
-      
+
       const card = list.querySelector('[data-sym="' + k + '"]');
       if (card) {
         const upEl = card.querySelector('.pc-upnl');
         const mkEl = card.querySelector('[data-mk]');
-        
         mkEl.textContent = 'Mk ' + (m.price > 0 ? this.fmtPxShort(m.price) : '…');
         upEl.textContent = this.fmtSign(up) + ' (' + (roe >= 0 ? '+' : '') + roe.toFixed(1) + '%)';
         upEl.className = 'pc-upnl mono ' + (up >= 0 ? 'pos' : 'neg');
@@ -1372,156 +1101,141 @@ class DeltaPaperApp {
     });
   }
 
-  /**
-   * Render history
-   */
   renderHistory() {
     const S = this.state.get();
     this.$('mHisCnt').textContent = String(S.history.length);
-    
+
     if (!this.$('hisOverlay').classList.contains('show')) return;
-    
+
     this.$('hisEmpty').style.display = S.history.length ? 'none' : 'block';
-    
+
     if (S.history.length === this.hisLen) return;
     this.hisLen = S.history.length;
-    
+
     const tbody = this.$('hisBody');
     const fragment = document.createDocumentFragment();
-    
+
     S.history.forEach(h => {
       const tr = document.createElement('tr');
-      
+
       const tdTime = document.createElement('td');
       tdTime.textContent = new Date(h.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-      
+
       const tdSym = document.createElement('td');
       tdSym.className = 'sym-c';
       tdSym.textContent = (this.config.SYM_META[h.sym] || { short: h.sym }).short;
-      
+
       const tdLabel = document.createElement('td');
       tdLabel.textContent = h.label;
-      
+
       const tdPrice = document.createElement('td');
       tdPrice.textContent = this.fmtPrice(h.price, 2);
-      
+
       const tdPnl = document.createElement('td');
       tdPnl.className = h.pnl > 0 ? 'pos' : (h.pnl < 0 ? 'neg' : '');
       tdPnl.textContent = h.pnl ? this.fmtSign(h.pnl) : '—';
-      
+
       tr.append(tdTime, tdSym, tdLabel, tdPrice, tdPnl);
       fragment.appendChild(tr);
     });
-    
+
     tbody.replaceChildren(fragment);
   }
 
-  /**
-   * Render funds
-   */
   renderFunds() {
     const S = this.state.get();
     const rate = this.state.rate || this.config.BASE_RATE;
-    
+
     if (!this.$('fundsOverlay').classList.contains('show')) return;
-    
+
     this.$('fRate').textContent = '₹' + rate.toFixed(2);
     this.$('fwInr').textContent = this.fmtInr(S.inr);
     this.$('fwUsd').textContent = this.fmtUsd(S.usd) + ' USD';
     this.$('fwUsdSub').textContent = '≈ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd());
     this.$('wdAvail').textContent = this.fmtInr(S.inr);
-    
+
     const sig = S.ledger.length + ':' + (S.ledger[0] ? S.ledger[0].t : '');
     if (this.$('ledgerBody')._sig === sig) return;
     this.$('ledgerBody')._sig = sig;
-    
+
     this.$('ledgerEmpty').style.display = S.ledger.length ? 'none' : 'block';
-    
+
     const tbody = this.$('ledgerBody');
     const fragment = document.createDocumentFragment();
-    
+
     S.ledger.forEach(l => {
       const tr = document.createElement('tr');
-      
+
       const tdTime = document.createElement('td');
       tdTime.textContent = new Date(l.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-      
+
       const tdType = document.createElement('td');
       tdType.className = 'sym-c';
       tdType.textContent = l.type;
-      
+
       const tdInr = document.createElement('td');
       tdInr.className = l.dInr ? (l.dInr > 0 ? 'pos' : 'neg') : '';
       tdInr.textContent = l.dInr ? this.fmtInrS(l.dInr) : '—';
-      
+
       const tdUsd = document.createElement('td');
       tdUsd.className = l.dUsd ? (l.dUsd > 0 ? 'pos' : 'neg') : '';
       tdUsd.textContent = l.dUsd ? this.fmtSign(l.dUsd) : '—';
-      
+
       tr.append(tdTime, tdType, tdInr, tdUsd);
       fragment.appendChild(tr);
     });
-    
+
     tbody.replaceChildren(fragment);
   }
 
-  /**
-   * Render menu
-   */
   renderMenu() {
     const S = this.state.get();
     if (!this.$('menuOverlay').classList.contains('show')) return;
-    
+
     if (document.activeElement !== this.$('levRange')) {
       this.$('levRange').value = S.lev;
     }
     this.$('levVal').textContent = S.lev + 'x';
   }
 
-  /**
-   * Render account
-   */
   renderAcct() {
     const S = this.state.get();
-    
+
     this.$('aAvatar').textContent = (S.name || 'T').trim().charAt(0).toUpperCase() || 'T';
     this.$('aNameInput').value = S.name;
     this.$('aUid').textContent = S.uid;
     this.$('aSince').textContent = new Date(S.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    
+
     const closed = S.wins + S.losses;
     this.$('stTrades').textContent = String(closed);
     this.$('stWin').textContent = closed ? ((S.wins / closed) * 100).toFixed(1) + '%' : '—';
-    
+
     const re = this.$('stReal');
     re.textContent = this.fmtSign(S.realized) + ' $';
     re.className = 'sv ' + (S.realized >= 0 ? 'pos' : 'neg');
-    
+
     this.$('stFees').textContent = this.fmtUsd(S.feesTotal) + ' $';
     this.$('stBest').textContent = S.best > 0 ? this.fmtSign(S.best) + ' $' : '—';
     this.$('stWorst').textContent = S.worst < 0 ? this.fmtSign(S.worst) + ' $' : '—';
-    
+
     this.drawEquityCurve();
   }
 
-  /**
-   * Draw equity curve
-   */
   drawEquityCurve() {
     const cv = this.$('eqCanvas');
+    if (!cv) return;
     const ctx = cv.getContext('2d');
     const S = this.state.get();
-    
+
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const W = cv.clientWidth, H = cv.clientHeight;
-    
     if (W === 0 || H === 0) return;
-    
+
     cv.width = W * dpr;
     cv.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    
+
     const pts = S.equityCurve;
     if (pts.length < 2) {
       ctx.fillStyle = '#5a6a80';
@@ -1531,26 +1245,20 @@ class DeltaPaperApp {
       ctx.fillText('Equity curve appears as you trade', W / 2, H / 2);
       return;
     }
-    
+
     let mn = Infinity, mx = -Infinity;
-    pts.forEach(p => {
-      mn = Math.min(mn, p.e);
-      mx = Math.max(mx, p.e);
-    });
-    
+    pts.forEach(p => { mn = Math.min(mn, p.e); mx = Math.max(mx, p.e); });
     if (mx === mn) { mx += 1; mn -= 1; }
-    
     const padV = (mx - mn) * 0.08;
-    mn -= padV;
-    mx += padV;
-    
+    mn -= padV; mx += padV;
+
     const x = i => i / (pts.length - 1) * W;
     const y = v => H - (v - mn) / (mx - mn) * H;
-    
+
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, 'rgba(79,140,255,.30)');
     grad.addColorStop(1, 'rgba(79,140,255,0)');
-    
+
     ctx.beginPath();
     ctx.moveTo(x(0), y(pts[0].e));
     pts.forEach((p, i) => ctx.lineTo(x(i), y(p.e)));
@@ -1559,7 +1267,7 @@ class DeltaPaperApp {
     ctx.closePath();
     ctx.fillStyle = grad;
     ctx.fill();
-    
+
     ctx.beginPath();
     ctx.moveTo(x(0), y(pts[0].e));
     pts.forEach((p, i) => ctx.lineTo(x(i), y(p.e)));
@@ -1569,7 +1277,6 @@ class DeltaPaperApp {
   }
 }
 
-// Export for module systems
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = DeltaPaperApp;
 }
