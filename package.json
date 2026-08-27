@@ -1,27 +1,31 @@
 {
   "name": "delta-paper",
   "version": "10.0.0",
-  "description": "Paper trading on live Delta Exchange India data — BTC, ETH, SOL",
+  "description": "Progressive Web App (PWA) for paper trading on Delta Exchange India derivatives market. Now with strict TypeScript, Vite build tooling, and Vitest testing.",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint js/ tests/",
     "lint:fix": "eslint js/ tests/ --fix",
     "format": "prettier --write \"js/**/*.js\" \"tests/**/*.js\" \"css/**/*.css\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
   },
+  "keywords": ["paper-trading", "delta-exchange", "crypto", "pwa", "trading"],
+  "license": "MIT",
   "devDependencies": {
-    "vite": "^6.3.5",
-    "vitest": "^3.2.1",
-    "jsdom": "^26.1.0",
-    "eslint": "^9.27.0",
     "@eslint/js": "^9.27.0",
+    "@types/node": "^26.3.0",
+    "decimal.js": "^10.6.0",
+    "eslint": "^9.27.0",
+    "jsdom": "^29.1.1",
     "prettier": "^3.5.3",
-    "typescript": "^5.8.3"
-  },
-  "keywords": ["paper-trading", "delta-exchange", "crypto", "pwa"],
-  "license": "MIT"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
 }

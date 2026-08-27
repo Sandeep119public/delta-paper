@@ -1,22 +1,36 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals"],
+    
+    "outDir": "./dist",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    
     "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
+    
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "./dist",
+    
+    "allowJs": true,
+    "checkJs": false,
+    
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
@@ -24,16 +38,8 @@
       "@services/*": ["./js/services/*"],
       "@types/*": ["./types/*"]
     },
-    "typeRoots": ["./types", "./node_modules/@types"],
-    "types": ["vitest/globals"]
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
-  "include": [
-    "js/**/*.js",
-    "tests/**/*.js",
-    "types/**/*.d.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  "include": ["js/**/*", "tests/**/*", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }
