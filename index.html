@@ -1,120 +1,194 @@
-<!--
-  Δ DELTA PAPER — MOBILE v9 (Lot-based sizing)
-  Quantity = number of CONTRACTS (lots), matching Delta Exchange India:
-    BTCUSD lot = 0.001 BTC • ETHUSD lot = 0.01 ETH • SOLUSD lot = 1 SOL
-  Notional = lots × lot × mark price. Lot sizes fetched live from /v2/products.
-  Main screen: Balance • BTC/ETH/SOL • Lot stepper • BUY/SELL • Positions.
-  Tap position → TP/SL sheet. Everything else in ☰ Menu.
--->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0a0e15">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f19">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Delta Paper">
 <meta name="description" content="Paper trading on LIVE Delta Exchange India data — BTC, ETH, SOL.">
 <title>Delta Paper — Live India Simulator</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-600-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/jetbrains-mono@latest/latin-400-normal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/fonts/jetbrains-mono@latest/latin-600-normal.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
-<style>
-/* App-specific overrides */
-.update-notice{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:12px 24px;border-radius:8px;display:flex;align-items:center;gap:12px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.update-notice button{background:#fff;color:var(--accent);border:none;padding:6px 16px;border-radius:6px;font-weight:700;cursor:pointer}
-.toast{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);padding:12px 16px;border-radius:8px;margin-bottom:8px;animation:slideIn .3s ease}
-.toast.pos{border-left-color:var(--green)}
-.toast.neg{border-left-color:var(--red)}
-@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-</style>
+<link rel="manifest" href="manifest.json">
 </head>
 <body>
-<div class="app">
+<div id="toasts"></div>
 
-<header class="top">
-  <div class="logo">Δ</div>
-  <div class="brand">
-    <h1>Delta Paper</h1>
-    <span class="live-mini"><span class="feed-dot" id="chipDot"></span><span id="chipText">SYNC…</span></span>
+<!-- Sticky Top Navigation -->
+<header class="top-nav">
+  <div class="nav-left">
+    <div class="logo">Δ</div>
+    <div class="brand">
+      <h1>Delta Paper</h1>
+      <div class="status-chip">
+        <span class="status-dot" id="chipDot"></span>
+        <span id="chipText">SYNC…</span>
+      </div>
+    </div>
   </div>
-  <div class="bal">
-    <span>Balance</span>
-    <b id="hEquity">—</b>
-    <i id="hBalSub">—</i>
+  <div class="nav-right">
+    <div class="balance-group">
+      <div class="bal-item">
+        <span class="bal-label">Equity</span>
+        <b class="bal-val mono" id="hEquity">₹0</b>
+      </div>
+      <div class="bal-item">
+        <span class="bal-label">Available</span>
+        <b class="bal-val mono small" id="hBalSub">Free 0 $</b>
+      </div>
+    </div>
+    <button class="icon-btn" id="menuBtn" title="Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
   </div>
-  <button class="icon-btn" id="menuBtn" title="Menu">☰</button>
 </header>
 
-<section class="panel">
-  <div class="panel-h">
-    <h3 class="mono" id="mktTitle">BTCUSD</h3>
-    <span class="feed-mini"><span class="feed-dot" id="feedDot"></span><span id="feedText">Connecting…</span></span>
-  </div>
-  <div class="sym-row" id="symRow"></div>
-  <div class="price-strip">
-    <span class="ps-price" id="psPrice">…</span>
-    <span class="ps-chg up" id="psChg">—</span>
-    <span class="ps-fund" id="psFund"></span>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-h">
-    <h3>Quantity <em id="lotLabel">1 lot = 0.001 BTC</em></h3>
-    <span class="rt tap" id="qtyLevRt">10x ⚙</span>
-  </div>
-  <div class="qty-wrap">
-    <div class="qty-row">
-      <button class="step-btn" id="qtyMinus">−</button>
-      <div class="qty-input-wrap">
-        <input type="number" id="qtyIn" step="1" inputmode="numeric" min="1" placeholder="1">
-        <span class="qty-unit">LOTS</span>
+<!-- Main Dashboard Grid -->
+<main class="dashboard">
+  <!-- COLUMN 1: Markets & Order Ticket -->
+  <section class="col-trading">
+    <div class="panel market-panel">
+      <div class="panel-h">
+        <h3>Markets</h3>
+        <span class="feed-status">
+          <span class="feed-dot" id="feedDot"></span>
+          <span class="feed-mini" id="feedText">SYNC…</span>
+        </span>
       </div>
-      <button class="step-btn" id="qtyPlus">+</button>
+      <div class="market-list" id="symRow"></div>
     </div>
-    <div class="qk">
-      <button data-q="25">$25</button>
-      <button data-q="50">$50</button>
-      <button data-q="100">$100</button>
-      <button data-q="max">Max</button>
+
+    <div class="panel order-panel">
+      <div class="panel-h">
+        <h3 id="mktTitle">BTCUSD • PERP</h3>
+      </div>
+
+      <div class="price-strip">
+        <span class="ps-price mono" id="psPrice">…</span>
+        <span class="ps-chg mono" id="psChg">0.00%</span>
+        <span class="ps-fund mono" id="psFund"></span>
+      </div>
+
+      <div class="order-form">
+        <div class="qty-wrap">
+          <label class="qty-label">Quantity <span class="lot-hint" id="lotLabel">1 lot = ...</span></label>
+          <div class="qty-controls">
+            <button class="step-btn" id="qtyMinus">−</button>
+            <div class="qty-input-wrap">
+              <input type="number" id="qtyIn" value="1" min="1">
+              <span class="qty-unit">LOTS</span>
+            </div>
+            <button class="step-btn" id="qtyPlus">+</button>
+          </div>
+          <div class="qk">
+            <button data-q="25">$25</button>
+            <button data-q="50">$50</button>
+            <button data-q="100">$100</button>
+            <button data-q="max">MAX</button>
+          </div>
+          <div class="qty-info" id="qtyInfo">—</div>
+        </div>
+
+        <div class="leverage-wrap">
+          <label class="lev-label">Leverage <button class="lev-trigger" id="qtyLevRt">10x ⚙</button></label>
+          <input type="range" id="levRange" min="1" max="20" value="10">
+        </div>
+
+        <div class="conv-hint" id="convHint" style="display:none">
+          <span>Low margin — convert INR to USD</span>
+          <button id="convHintBtn">Convert</button>
+        </div>
+
+        <div class="entry-grid">
+          <button class="entry-btn buy" id="buyBtn">
+            <span class="el">BUY / LONG</span>
+            <small id="buySub">—</small>
+          </button>
+          <button class="entry-btn sell" id="sellBtn">
+            <span class="el">SELL / SHORT</span>
+            <small id="sellSub">—</small>
+          </button>
+        </div>
+      </div>
     </div>
-    <div class="qty-info" id="qtyInfo">—</div>
-  </div>
-</section>
+  </section>
 
-<div class="entry-grid">
-  <button id="buyBtn" class="entry-btn buy"><span class="el">BUY / LONG</span><small id="buySub">—</small></button>
-  <button id="sellBtn" class="entry-btn sell"><span class="el">SELL / SHORT</span><small id="sellSub">—</small></button>
-</div>
+  <!-- COLUMN 2: Active Positions -->
+  <section class="col-positions">
+    <div class="panel pos-panel">
+      <div class="panel-h">
+        <h3>Active Positions <span class="cnt" id="cntPos">0</span></h3>
+        <button class="mini-btn" id="closeAllBtn">Close All</button>
+      </div>
+      <div id="posList">
+        <div class="empty" id="posEmpty">No open positions — tap BUY or SELL</div>
+      </div>
+    </div>
+  </section>
 
-<div class="conv-hint" id="convHint" style="display:none">
-  <span>⚠ Low USD margin — convert INR to trade</span>
-  <button id="convHintBtn">Convert</button>
-</div>
+  <!-- COLUMN 3: Account & Wallets -->
+  <section class="col-account">
+    <div class="panel eq-panel">
+      <div class="panel-h">
+        <h3>Equity Curve</h3>
+      </div>
+      <div class="eq-box">
+        <canvas id="eqCanvas"></canvas>
+      </div>
+    </div>
+    <div class="panel funds-panel">
+      <div class="panel-h">
+        <h3>Wallets</h3>
+        <button class="mini-btn" id="openDep">Deposit</button>
+      </div>
+      <div class="wallets">
+        <div class="wcard">
+          <span class="wl">INR Wallet</span>
+          <div class="wv mono" id="fwInr">₹0</div>
+          <div class="ws mono">UPI / IMPS / Netbanking (sim)</div>
+          <div class="act-row" style="margin-top:8px;gap:6px">
+            <button class="mini-btn" id="openWd">Withdraw</button>
+            <button class="mini-btn" id="openCvt">Convert ⇄</button>
+          </div>
+        </div>
+        <div class="wcard">
+          <span class="wl">USD Margin</span>
+          <div class="wv mono" id="fwUsd">0 USD</div>
+          <div class="ws mono" id="fwUsdSub">≈ ₹0</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
 
-<section class="panel">
-  <div class="panel-h">
-    <h3>Positions <span class="cnt" id="cntPos">0</span></h3>
-    <button class="mini-btn" id="closeAllBtn">Close All</button>
-  </div>
-  <div id="posList"></div>
-  <div class="empty" id="posEmpty">No open positions — tap BUY or SELL 👆</div>
-</section>
+<!-- Mobile Bottom Navigation -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-tab="trading">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-2-2-4 4"/></svg>
+    <span>Trade</span>
+  </button>
+  <button class="nav-btn" id="mHistory">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span>History <span class="cnt" id="mHisCnt">0</span></span>
+  </button>
+  <button class="nav-btn" id="mFunds">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+    <span>Wallet</span>
+  </button>
+  <button class="nav-btn" id="mAccount">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <span>Profile</span>
+  </button>
+</nav>
 
-<footer>
-  Live data: <b>Delta Exchange India</b> public API • Lot sizes from official contract specs.<br>
-  Trades are 100% simulated paper orders. Not affiliated with Delta Exchange.
-</footer>
+<!-- ═══════════ OVERLAYS / MODALS ═══════════ -->
 
-</div>
-
-<!-- ☰ MENU SHEET -->
+<!-- MENU -->
 <div class="overlay" id="menuOverlay">
   <div class="modal">
     <div class="modal-h"><h3>☰ Menu</h3><button class="x-btn" data-close-m="menuOverlay">✕</button></div>
@@ -122,13 +196,13 @@
       <div class="sub-h">Leverage (used by entry buttons)</div>
       <div class="fld">
         <label>Leverage <b id="levVal">10x</b></label>
-        <input type="range" id="levRange" min="1" max="20" value="10">
+        <input type="range" id="levRange2" min="1" max="20" value="10">
       </div>
       <div class="sub-h">More</div>
       <div class="menu-list">
-        <button id="mFunds">💳 Funds &amp; Wallets <span>INR ⇄ USD</span></button>
-        <button id="mHistory">📜 Trade History <span id="mHisCnt">0</span></button>
-        <button id="mAccount">👤 Account &amp; Stats</button>
+        <button id="mFundsMenu">💳 Funds &amp; Wallets <span>INR ⇄ USD</span></button>
+        <button id="mHistoryMenu">📜 Trade History <span id="mHisCnt2">0</span></button>
+        <button id="mAccountMenu">👤 Account &amp; Stats</button>
         <button id="mInstall">📲 Install App</button>
         <button id="mReset" class="danger">♻️ Reset Account</button>
       </div>
@@ -136,7 +210,7 @@
   </div>
 </div>
 
-<!-- POSITION DETAIL SHEET -->
+<!-- POSITION DETAIL -->
 <div class="overlay" id="posOverlay">
   <div class="modal">
     <div class="modal-h"><h3 id="pdTitle">—</h3><button class="x-btn" data-close-m="posOverlay">✕</button></div>
@@ -170,7 +244,7 @@
   </div>
 </div>
 
-<!-- HISTORY SHEET -->
+<!-- HISTORY -->
 <div class="overlay" id="hisOverlay">
   <div class="modal">
     <div class="modal-h"><h3>📜 Trade History</h3><button class="x-btn" data-close-m="hisOverlay">✕</button></div>
@@ -198,18 +272,18 @@
       <div class="wallets">
         <div class="wcard">
           <div class="wl">INR — Funding</div>
-          <div class="wv" id="fwInr">₹0</div>
+          <div class="wv" id="fwInr2">₹0</div>
           <div class="ws">UPI / IMPS / Netbanking (simulated)</div>
           <div class="act-row">
-            <button class="mini-btn" id="openDep">Deposit</button>
-            <button class="mini-btn" id="openWd">Withdraw</button>
+            <button class="mini-btn" id="openDep2">Deposit</button>
+            <button class="mini-btn" id="openWd2">Withdraw</button>
           </div>
         </div>
         <div class="wcard">
           <div class="wl">USD — Margin</div>
-          <div class="wv" id="fwUsd">0.00</div>
-          <div class="ws" id="fwUsdSub">≈ ₹0 • Locked 0.00</div>
-          <div class="act-row"><button class="mini-btn" id="openCvt">Convert ⇄</button></div>
+          <div class="wv" id="fwUsd2">0.00</div>
+          <div class="ws" id="fwUsdSub2">≈ ₹0 • Locked 0.00</div>
+          <div class="act-row"><button class="mini-btn" id="openCvt2">Convert ⇄</button></div>
         </div>
       </div>
       <div class="sub-h">Funding History</div>
@@ -327,7 +401,7 @@
         <div class="scard"><div class="sl">Worst</div><div class="sv neg" id="stWorst">—</div></div>
       </div>
       <div class="sub-h">Equity Curve (₹)</div>
-      <div class="eq-box"><canvas id="eqCanvas"></canvas></div>
+      <div class="eq-box"><canvas id="eqCanvas2"></canvas></div>
       <div class="danger-zone">
         <p>Reset wipes wallets, positions, history and stats.</p>
         <button class="danger-btn" id="resetBtn2">Reset Account</button>
@@ -336,7 +410,11 @@
   </div>
 </div>
 
-<div id="toasts"></div>
+<!-- Footer (desktop) -->
+<footer class="app-footer">
+  Live data: <b>Delta Exchange India</b> public API &bull; Lot sizes from official contract specs.<br>
+  Trades are 100% simulated paper orders. Not affiliated with Delta Exchange.
+</footer>
 
 <script src="js/config.js"></script>
 <script src="js/console.js"></script>
@@ -356,4 +434,5 @@
 <script src="js/BacktestEngine.js"></script>
 <script src="js/app.js"></script>
 <script src="js/boot.js"></script>
-</body></html>
+</body>
+</html>

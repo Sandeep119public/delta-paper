@@ -107,6 +107,30 @@ class DeltaPaperApp {
       this.openModal('acctOverlay');
     });
 
+    // Menu overlay duplicates (for desktop menu)
+    if (this.$('mFundsMenu')) {
+      this.$('mFundsMenu').addEventListener('click', () => {
+        this.closeModal('menuOverlay');
+        this.renderFunds();
+        this.openModal('fundsOverlay');
+      });
+    }
+    if (this.$('mHistoryMenu')) {
+      this.$('mHistoryMenu').addEventListener('click', () => {
+        this.closeModal('menuOverlay');
+        this.hisLen = -1;
+        this.renderHistory();
+        this.openModal('hisOverlay');
+      });
+    }
+    if (this.$('mAccountMenu')) {
+      this.$('mAccountMenu').addEventListener('click', () => {
+        this.closeModal('menuOverlay');
+        this.renderAcct();
+        this.openModal('acctOverlay');
+      });
+    }
+
     this.$('mInstall').addEventListener('click', async () => {
       if (window.deferredInstall) {
         window.deferredInstall.prompt();
@@ -874,7 +898,7 @@ class DeltaPaperApp {
   }
 
   renderAll() {
-    this.renderStatus();   // <-- NEW: drive the feed / chip badges
+    this.renderStatus();
     this.renderHeader();
     this.renderMarkets();
     this.renderQty();
@@ -884,6 +908,7 @@ class DeltaPaperApp {
     this.renderHistory();
     this.renderFunds();
     this.renderMenu();
+    this.drawEquityCurve();
 
     if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) {
       this.renderCvtPreview();
@@ -935,15 +960,16 @@ class DeltaPaperApp {
       this.config.SYMBOLS.forEach(sym => {
         const b = document.createElement('button');
         b.className = 'sym-btn';
-        b.textContent = this.config.SYM_META[sym].short;
+        b.dataset.sym = sym;
+        b.innerHTML = '<span class="sym-name">' + this.config.SYM_META[sym].short + '</span><span class="price mono">…</span>';
         b.addEventListener('click', () => this.switchSymbol(sym));
         wrap.appendChild(b);
       });
     }
 
     const buttons = wrap.querySelectorAll('.sym-btn');
-    buttons.forEach((b, i) => {
-      const sym = this.config.SYMBOLS[i];
+    buttons.forEach(b => {
+      const sym = b.dataset.sym;
       if (sym === this.selSym) { if (!b.classList.contains('on')) b.classList.add('on'); }
       else if (b.classList.contains('on')) { b.classList.remove('on'); }
     });
@@ -954,15 +980,29 @@ class DeltaPaperApp {
     this.$('mktTitle').textContent = m.symbol + ' • PERP';
     this.$('lotLabel').textContent = '1 lot = ' + this.fmtLot(m.lot) + ' ' + this.config.SYM_META[this.selSym].short;
     this.$('psPrice').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
-    this.$('psPrice').className = 'ps-price ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
+    this.$('psPrice').className = 'ps-price mono ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
 
     const chg = this.chgOf(m);
     this.$('psChg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
-    this.$('psChg').className = 'ps-chg ' + (chg >= 0 ? 'up' : 'dn');
+    this.$('psChg').className = 'ps-chg mono ' + (chg >= 0 ? 'up' : 'dn');
 
     this.$('psFund').textContent = m.funding
       ? 'Fund ' + (m.funding >= 0 ? '+' : '') + (m.funding * 100).toFixed(4) + '%'
       : '';
+
+    this.config.SYMBOLS.forEach(sym => {
+      const mkt = this.market.getMarket(sym);
+      if (!mkt) return;
+      const btn = wrap.querySelector('[data-sym="' + sym + '"]');
+      if (btn) {
+        const priceEl = btn.querySelector('.price');
+        if (priceEl) {
+          priceEl.textContent = mkt.price > 0 ? this.fmtPrice(mkt.price, mkt.dec) : '…';
+          const c = this.chgOf(mkt);
+          priceEl.className = 'price mono ' + (c >= 0 ? 'pos' : 'neg');
+        }
+      }
+    });
   }
 
   chgOf(m) {
@@ -1146,12 +1186,18 @@ class DeltaPaperApp {
     const S = this.state.get();
     const rate = this.state.rate || this.config.BASE_RATE;
 
+    // Always update sidebar wallet display
+    const updateEl = (id, val) => { const el = this.$(id); if (el) el.textContent = val; };
+    updateEl('fwInr', this.fmtInr(S.inr));
+    updateEl('fwUsd', this.fmtUsd(S.usd) + ' USD');
+    updateEl('fwUsdSub', '≈ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd()));
+    updateEl('fwInr2', this.fmtInr(S.inr));
+    updateEl('fwUsd2', this.fmtUsd(S.usd) + ' USD');
+    updateEl('fwUsdSub2', '≈ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd()));
+
     if (!this.$('fundsOverlay').classList.contains('show')) return;
 
     this.$('fRate').textContent = '₹' + rate.toFixed(2);
-    this.$('fwInr').textContent = this.fmtInr(S.inr);
-    this.$('fwUsd').textContent = this.fmtUsd(S.usd) + ' USD';
-    this.$('fwUsdSub').textContent = '≈ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd());
     this.$('wdAvail').textContent = this.fmtInr(S.inr);
 
     const sig = S.ledger.length + ':' + (S.ledger[0] ? S.ledger[0].t : '');
@@ -1192,8 +1238,9 @@ class DeltaPaperApp {
     const S = this.state.get();
     if (!this.$('menuOverlay').classList.contains('show')) return;
 
-    if (document.activeElement !== this.$('levRange')) {
-      this.$('levRange').value = S.lev;
+    const range = this.$('levRange') || this.$('levRange2');
+    if (range && document.activeElement !== range) {
+      range.value = S.lev;
     }
     this.$('levVal').textContent = S.lev + 'x';
   }
@@ -1221,8 +1268,12 @@ class DeltaPaperApp {
     this.drawEquityCurve();
   }
 
-  drawEquityCurve() {
-    const cv = this.$('eqCanvas');
+  drawEquityCurve(targetCanvas) {
+    const ids = targetCanvas ? [targetCanvas] : ['eqCanvas', 'eqCanvas2'];
+    ids.forEach(id => this._drawCurveOn(this.$(id)));
+  }
+
+  _drawCurveOn(cv) {
     if (!cv) return;
     const ctx = cv.getContext('2d');
     const S = this.state.get();
@@ -1256,8 +1307,8 @@ class DeltaPaperApp {
     const y = v => H - (v - mn) / (mx - mn) * H;
 
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(79,140,255,.30)');
-    grad.addColorStop(1, 'rgba(79,140,255,0)');
+    grad.addColorStop(0, 'rgba(59,130,246,.30)');
+    grad.addColorStop(1, 'rgba(59,130,246,0)');
 
     ctx.beginPath();
     ctx.moveTo(x(0), y(pts[0].e));
