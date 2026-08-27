@@ -1,35 +1,45 @@
 {
   "compilerOptions": {
-    // Environment Settings
     "module": "ESNext",
     "target": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "types": ["node", "vitest/globals"],
     
-    // Output
     "outDir": "./dist",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
     
-    // Strict Typechecking - Critical for Financial Apps
     "strict": true,
     "strictNullChecks": true,
     "noImplicitAny": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
     
-    // Module Resolution
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     
-    // Allow JS files temporarily during migration
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./js/*"],
+      "@services/*": ["./js/services/*"],
+      "@types/*": ["./types/*"]
+    },
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
-  "include": ["js/**/*", "tests/**/*"],
+  "include": ["js/**/*", "tests/**/*", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1188,7 +1188,7 @@ class DeltaPaperApp {
   renderMarkets() {
     const wrap = this.$('symRow');
     if (wrap.childElementCount !== this.config.SYMBOLS.length) {
-      wrap.innerHTML = '';
+      wrap.replaceChildren();
       this.config.SYMBOLS.forEach(sym => {
         const b = document.createElement('button');
         b.className = 'sym-btn';
@@ -1284,11 +1284,11 @@ class DeltaPaperApp {
     
     const list = this.$('posList');
     if (keys.length === 0) {
-      list.innerHTML = '';
+      list.replaceChildren();
       return;
     }
     
-    list.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     keys.forEach(k => {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
@@ -1298,30 +1298,60 @@ class DeltaPaperApp {
       card.className = 'pos-card';
       card.dataset.sym = k;
       
-      const tpSlTxt = (pos.tp || pos.sl)
+      // Row 1
+      const row1 = document.createElement('div');
+      row1.className = 'pc-row1';
+      
+      const sideTag = document.createElement('span');
+      sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
+      sideTag.textContent = (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x';
+      
+      const symEl = document.createElement('span');
+      symEl.className = 'pc-sym';
+      symEl.textContent = shortName;
+      
+      const qtyEl = document.createElement('span');
+      qtyEl.className = 'pc-qty';
+      qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
+      
+      const upnlEl = document.createElement('span');
+      upnlEl.className = 'pc-upnl';
+      upnlEl.textContent = '—';
+      
+      row1.append(sideTag, symEl, qtyEl, upnlEl);
+      
+      // Row 2
+      const row2 = document.createElement('div');
+      row2.className = 'pc-row2';
+      
+      const inEl = document.createElement('span');
+      inEl.dataset.in = '';
+      inEl.textContent = 'In ' + this.fmtPxShort(pos.entry);
+      
+      const mkEl = document.createElement('span');
+      mkEl.dataset.mk = '';
+      mkEl.textContent = 'Mk —';
+      
+      const tpSlEl = document.createElement('span');
+      tpSlEl.className = 'pc-tpsl';
+      tpSlEl.textContent = (pos.tp || pos.sl)
         ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') + 
            (pos.tp && pos.sl ? ' • ' : '') + 
            (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : ''))
         : '';
       
-      card.innerHTML = 
-        '<div class="pc-row1">' +
-          '<span class="side-tag ' + (pos.dir === 1 ? 'long' : 'short') + '">' + 
-            (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x</span>' +
-          '<span class="pc-sym">' + shortName + '</span>' +
-          '<span class="pc-qty">' + pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty) + '</span>' +
-          '<span class="pc-upnl">—</span>' +
-        '</div>' +
-        '<div class="pc-row2">' +
-          '<span data-in>In ' + this.fmtPxShort(pos.entry) + '</span>' +
-          '<span data-mk>Mk —</span>' +
-          '<span class="pc-tpsl">' + tpSlTxt + '</span>' +
-          '<span class="pc-arrow">›</span>' +
-        '</div>';
+      const arrowEl = document.createElement('span');
+      arrowEl.className = 'pc-arrow';
+      arrowEl.textContent = '›';
       
+      row2.append(inEl, mkEl, tpSlEl, arrowEl);
+      
+      card.append(row1, row2);
       card.addEventListener('click', () => this.openPosDetail(k));
-      list.appendChild(card);
+      fragment.appendChild(card);
     });
+    
+    list.replaceChildren(fragment);
     
     // Update P&L
     keys.forEach(k => {
@@ -1330,7 +1360,7 @@ class DeltaPaperApp {
       const up = (m.price - pos.entry) * pos.qty * pos.dir;
       const roe = up / pos.margin * 100;
       
-      const card = list.querySelector(`[data-sym="${k}"]`);
+      const card = list.querySelector('[data-sym="' + k + '"]');
       if (card) {
         const upEl = card.querySelector('.pc-upnl');
         const mkEl = card.querySelector('[data-mk]');
@@ -1356,14 +1386,34 @@ class DeltaPaperApp {
     if (S.history.length === this.hisLen) return;
     this.hisLen = S.history.length;
     
-    this.$('hisBody').innerHTML = S.history.map(h => {
-      const t = new Date(h.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-      const cls = h.pnl > 0 ? 'pos' : (h.pnl < 0 ? 'neg' : '');
-      const short = (this.config.SYM_META[h.sym] || { short: h.sym }).short;
-      return '<tr><td>' + t + '</td><td class="sym-c">' + short + '</td><td>' + h.label + '</td>' +
-        '<td>' + this.fmtPrice(h.price, 2) + '</td>' +
-        '<td class="' + cls + '">' + (h.pnl ? this.fmtSign(h.pnl) : '—') + '</td></tr>';
-    }).join('');
+    const tbody = this.$('hisBody');
+    const fragment = document.createDocumentFragment();
+    
+    S.history.forEach(h => {
+      const tr = document.createElement('tr');
+      
+      const tdTime = document.createElement('td');
+      tdTime.textContent = new Date(h.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+      
+      const tdSym = document.createElement('td');
+      tdSym.className = 'sym-c';
+      tdSym.textContent = (this.config.SYM_META[h.sym] || { short: h.sym }).short;
+      
+      const tdLabel = document.createElement('td');
+      tdLabel.textContent = h.label;
+      
+      const tdPrice = document.createElement('td');
+      tdPrice.textContent = this.fmtPrice(h.price, 2);
+      
+      const tdPnl = document.createElement('td');
+      tdPnl.className = h.pnl > 0 ? 'pos' : (h.pnl < 0 ? 'neg' : '');
+      tdPnl.textContent = h.pnl ? this.fmtSign(h.pnl) : '—';
+      
+      tr.append(tdTime, tdSym, tdLabel, tdPrice, tdPnl);
+      fragment.appendChild(tr);
+    });
+    
+    tbody.replaceChildren(fragment);
   }
 
   /**
@@ -1386,14 +1436,33 @@ class DeltaPaperApp {
     this.$('ledgerBody')._sig = sig;
     
     this.$('ledgerEmpty').style.display = S.ledger.length ? 'none' : 'block';
-    this.$('ledgerBody').innerHTML = S.ledger.map(l => {
-      const t = new Date(l.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-      const ic = l.dInr ? (l.dInr > 0 ? 'pos' : 'neg') : '';
-      const uc = l.dUsd ? (l.dUsd > 0 ? 'pos' : 'neg') : '';
-      return '<tr><td>' + t + '</td><td class="sym-c">' + l.type + '</td>' +
-        '<td class="' + ic + '">' + (l.dInr ? this.fmtInrS(l.dInr) : '—') + '</td>' +
-        '<td class="' + uc + '">' + (l.dUsd ? this.fmtSign(l.dUsd) : '—') + '</td></tr>';
-    }).join('');
+    
+    const tbody = this.$('ledgerBody');
+    const fragment = document.createDocumentFragment();
+    
+    S.ledger.forEach(l => {
+      const tr = document.createElement('tr');
+      
+      const tdTime = document.createElement('td');
+      tdTime.textContent = new Date(l.t).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+      
+      const tdType = document.createElement('td');
+      tdType.className = 'sym-c';
+      tdType.textContent = l.type;
+      
+      const tdInr = document.createElement('td');
+      tdInr.className = l.dInr ? (l.dInr > 0 ? 'pos' : 'neg') : '';
+      tdInr.textContent = l.dInr ? this.fmtInrS(l.dInr) : '—';
+      
+      const tdUsd = document.createElement('td');
+      tdUsd.className = l.dUsd ? (l.dUsd > 0 ? 'pos' : 'neg') : '';
+      tdUsd.textContent = l.dUsd ? this.fmtSign(l.dUsd) : '—';
+      
+      tr.append(tdTime, tdType, tdInr, tdUsd);
+      fragment.appendChild(tr);
+    });
+    
+    tbody.replaceChildren(fragment);
   }
 
   /**
