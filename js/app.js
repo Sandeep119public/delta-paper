@@ -27,6 +27,9 @@ class DeltaPaperApp {
     this._tvVol = null;
     this._tvPriceLines = [];
     this._prevPrice = {};
+    this._tf = '1m';
+    this._tfSec = 60;
+    this._curCandle = null;
 
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
@@ -64,73 +67,89 @@ class DeltaPaperApp {
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#243448' },
     });
 
-    this._tvCandle = this._tvChart.addCandlestickSeries({
+    const opts = {
       upColor: '#10b981', downColor: '#ef4444', borderVisible: false,
       wickUpColor: '#10b981', wickDownColor: '#ef4444',
+    };
+    this._tvCandle = (typeof this._tvChart.addSeries === 'function')
+      ? this._tvChart.addSeries(LightweightCharts.CandlestickSeries, opts)
+      : this._tvChart.addCandlestickSeries(opts);
+
+    this._tvVol = (typeof this._tvChart.addSeries === 'function')
+      ? this._tvChart.addSeries(LightweightCharts.HistogramSeries, {
+          priceFormat: { type: 'volume' }, priceScaleId: '',
+          color: 'rgba(59,130,246,0.2)',
+        })
+      : this._tvChart.addHistogramSeries({
+          priceFormat: { type: 'volume' }, priceScaleId: '',
+        });
+    if (this._tvVol.priceScale) this._tvVol.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
+    this._loadCandles();
+
+    this.market.subscribe(() => {
+      const m = this.market.getMarket(this.selSym);
+      if (m && m.price > 0) this._feedTick(m.price);
     });
 
-    this._tvVol = this._tvChart.addHistogramSeries({
-      priceFormat: { type: 'volume' },
-      priceScaleId: '',
+    const tfBtns = document.querySelectorAll('.tf-row button');
+    tfBtns.forEach(b => {
+      b.addEventListener('click', () => {
+        tfBtns.forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+        this._loadCandles(this.selSym, b.dataset.tf);
+      });
     });
-    this._tvVol.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-
-    this._loadInitialCandles();
   }
 
-  _loadInitialCandles() {
-    const m = this.market.getMarket(this.selSym);
-    if (!m || !(m.price > 0)) {
-      setTimeout(() => this._loadInitialCandles(), 1000);
-      return;
-    }
+  _loadCandles(sym, tf) {
+    if (sym) this.selSym = sym;
+    if (tf) this._tf = tf;
+    this._tfSec = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }[this._tf] || 60;
+    this._curCandle = null;
 
-    const now = Math.floor(Date.now() / 1000);
-    const interval = 60;
-    const count = 120;
-    const candles = [];
-    const volumes = [];
-    let p = m.price * (0.97 + Math.random() * 0.06);
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - this._tfSec * 500;
 
-    for (let i = count; i > 0; i--) {
-      const t = now - i * interval;
-      const volatility = p * 0.003;
-      const open = p;
-      const close = open + (Math.random() - 0.48) * volatility;
-      const high = Math.max(open, close) + Math.random() * volatility * 0.5;
-      const low = Math.min(open, close) - Math.random() * volatility * 0.5;
-      const vol = Math.floor(Math.random() * 500 + 100);
-      candles.push({ time: t, open: +open.toFixed(m.dec), high: +high.toFixed(m.dec), low: +low.toFixed(m.dec), close: +close.toFixed(m.dec) });
-      volumes.push({ time: t, value: vol, color: close >= open ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)' });
-      p = close;
-    }
+    const url = 'https://api.india.delta.exchange/v2/history/candles'
+      + `?resolution=${this._tf}&symbol=${this.selSym}&start=${start}&end=${end}`;
 
-    this._tvCandle.setData(candles);
-    this._tvVol.setData(volumes);
-
-    const last = candles[candles.length - 1];
-    this._tvCandle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: m.price });
+    fetch(url)
+      .then(r => r.json())
+      .then(json => {
+        if (!json.result) return;
+        const r = json.result;
+        const data = r.time.map((t, i) => ({
+          time: t,
+          open: +r.open[i], high: +r.high[i],
+          low: +r.low[i], close: +r.close[i],
+        }));
+        if (this._tvCandle) this._tvCandle.setData(data);
+        if (this._tvChart) this._tvChart.timeScale().scrollToRealTime();
+      })
+      .catch(e => DELTA_LOGGER.log('[Chart] candle load failed', e));
   }
 
-  _updateChart(m) {
-    if (!this._tvCandle || !m || !(m.price > 0)) return;
+  _feedTick(price) {
+    if (!this._tvCandle || !(price > 0)) return;
+    const bucket = Math.floor(Date.now() / 1000 / this._tfSec) * this._tfSec;
+    const c = this._curCandle;
 
-    const now = Math.floor(Date.now() / 1000);
-    const time = now - (now % 60);
-
-    this._tvCandle.update({
-      time,
-      open: m.open24 || m.price,
-      high: Math.max(m.high24 || m.price, m.price),
-      low: Math.min(m.low24 || m.price, m.price),
-      close: m.price,
-    });
+    if (!c || c.time !== bucket) {
+      this._curCandle = { time: bucket, open: price, high: price, low: price, close: price };
+    } else {
+      c.high = Math.max(c.high, price);
+      c.low = Math.min(c.low, price);
+      c.close = price;
+    }
+    this._tvCandle.update(this._curCandle);
 
     if (this._tvVol) {
-      this._tvVol.update({ time, value: m.vol24 || Math.floor(Math.random() * 200 + 50), color: 'rgba(59,130,246,0.2)' });
+      const vol = c._vol = (c._vol || 0) + 1;
+      this._tvVol.update({ time: bucket, value: vol, color: 'rgba(59,130,246,0.2)' });
     }
 
-    this._updateTpSlLines(m);
+    this._updateTpSlLines(this.market.getMarket(this.selSym));
   }
 
   _updateTpSlLines(m) {
@@ -389,7 +408,7 @@ class DeltaPaperApp {
     if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = this.curLots;
     this._clearTpSlLines();
     this.markDirty();
-    this._loadInitialCandles();
+    this._loadCandles(sym);
   }
 
   adjustLeverage(delta) {
@@ -1146,8 +1165,6 @@ class DeltaPaperApp {
     this.$('psFund').textContent = m.funding
       ? 'Fund ' + (m.funding >= 0 ? '+' : '') + (m.funding * 100).toFixed(4) + '%'
       : '';
-
-    this._updateChart(m);
 
     this.config.SYMBOLS.forEach(sym => {
       const mkt = this.market.getMarket(sym);

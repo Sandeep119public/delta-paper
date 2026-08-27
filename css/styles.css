@@ -126,6 +126,14 @@ button { user-select: none; border: none; background: none; cursor: pointer; }
 .feed-dot.warn { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
 .feed-dot.bad { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .feed-mini { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.tf-row { display: flex; gap: 4px; }
+.tf-row button {
+  padding: 3px 9px; font: 700 10px var(--mono); cursor: pointer;
+  background: #16202f; border: 1px solid var(--border2); border-radius: 7px; color: var(--dim);
+  transition: all 0.15s;
+}
+.tf-row button:hover { color: var(--accent); border-color: var(--accent); }
+.tf-row button.on { color: var(--accent); border-color: var(--accent); background: rgba(79,140,255,.12); }
 
 /* ═══════════ MARKET WATCHLIST ═══════════ */
 .zone-markets .panel-body {
