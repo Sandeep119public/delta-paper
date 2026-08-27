@@ -541,6 +541,38 @@ td.sym-c { font-family: var(--sans); font-weight: 700; font-size: 12px; }
 .scard .sl { font-size: 9px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 700; }
 .scard .sv { font-family: var(--mono); font-size: 14px; font-weight: 700; margin-top: 3px; }
 
+/* ─── Stress Test Panel ─── */
+.stress-test-panel {
+  background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 11px;
+  padding: 12px; margin-bottom: 10px;
+}
+.st-params {
+  display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;
+}
+.st-params label { font-size: 11px; color: var(--muted); font-weight: 600; }
+.st-params select, .st-params input {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); padding: 6px 8px; font-size: 12px; font-family: var(--mono);
+}
+.st-speed {
+  display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap;
+}
+.st-speed label { font-size: 11px; color: var(--muted); font-weight: 600; }
+.st-speed select {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); padding: 4px 6px; font-size: 12px; font-family: var(--mono);
+}
+.mc-grid { grid-template-columns: repeat(4, 1fr); }
+.mc-bar {
+  width: 100%; height: 6px; background: var(--panel2); border-radius: 3px;
+  overflow: hidden; margin: 8px 0 4px;
+}
+.mc-fill {
+  height: 100%; width: 0%; background: var(--accent); border-radius: 3px;
+  transition: width 0.15s ease;
+}
+.mc-pct { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
 .danger-zone {
   margin-top: 14px; border: 1px dashed rgba(239, 68, 68, 0.4); border-radius: 11px; padding: 12px;
   display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;

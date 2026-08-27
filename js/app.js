@@ -502,6 +502,28 @@ class DeltaPaperApp {
 
     this.$('resetBtn2').addEventListener('click', () => this.resetAccount());
 
+    // Monte Carlo Stress Test
+    if (this.$('mcRunBtn')) {
+      this.$('mcRunBtn').addEventListener('click', () => this.runStressTest());
+    }
+
+    // Historical Events Replay
+    if (this.$('histEventLoad')) {
+      this.$('histEventLoad').addEventListener('click', () => this.loadHistoricalEvent());
+    }
+    if (this.$('histPlayPause')) {
+      this.$('histPlayPause').addEventListener('click', () => this.toggleBacktestPlay());
+    }
+    if (this.$('histStop')) {
+      this.$('histStop').addEventListener('click', () => this.stopBacktest());
+    }
+
+    // Backtest lifecycle events
+    eventBus.on('backtest:stopped', () => {
+      if (this.$('histPlayPause')) this.$('histPlayPause').textContent = 'Play';
+      this.toast('Backtest Complete', 'Historical replay finished', 'ok');
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this.market.getDataSource() === 'live') {
         // WS reconnect is automatic; nothing else to do
@@ -1600,11 +1622,179 @@ class DeltaPaperApp {
     this.$('stWorst').textContent = S.worst < 0 ? this.fmtSign(S.worst) + ' $' : '—';
 
     this.drawEquityCurve();
+
+    // Redraw MC chart if results exist
+    if (this.$('mcResults') && this.$('mcResults').style.display !== 'none' && this.$('mcCanvas')) {
+      this._redrawMcChart();
+    }
   }
 
   drawEquityCurve(targetCanvas) {
     const ids = targetCanvas ? [targetCanvas] : ['eqCanvas', 'eqCanvas2'];
     ids.forEach(id => this._drawCurveOn(this.$(id)));
+  }
+
+  async runStressTest() {
+    const S = this.state.get();
+    const trades = S.history.filter(h => h.pnl !== undefined && h.pnl !== 0);
+    if (trades.length < 3) {
+      return this.toast('Not enough trades', 'Need at least 3 closed trades to run stress test', 'err');
+    }
+
+    const iterations = parseInt(this.$('mcIterations').value, 10) || 10000;
+    const startingBalance = parseFloat(this.$('mcBalance').value) || 10000;
+    const mc = window.monteCarloEngine;
+    if (!mc) return this.toast('Error', 'Monte Carlo engine not loaded', 'err');
+
+    this.$('mcRunBtn').disabled = true;
+    this.$('mcRunBtn').textContent = 'Running...';
+    this.$('mcProgress').style.display = 'block';
+    this.$('mcResults').style.display = 'none';
+
+    const onProgress = (data) => {
+      this.$('mcFill').style.width = data.percent + '%';
+      this.$('mcPct').textContent = Math.round(data.percent) + '%';
+    };
+    eventBus.on('montecarlo:progress', onProgress);
+
+    try {
+      const result = await mc.runStressTest(trades, iterations, startingBalance);
+      eventBus.off('montecarlo:progress', onProgress);
+
+      this.$('mcResults').style.display = 'block';
+      this.$('mcSkill').textContent = (result.skillProbability * 100).toFixed(1) + '%';
+      this.$('mcSkill').className = 'sv mono ' + (result.skillProbability > 0.8 ? 'pos' : result.skillProbability < 0.5 ? 'neg' : '');
+      this.$('mcVerdict').textContent = result.verdict;
+      this.$('mcMAE').textContent = '$' + result.originalMAE.toFixed(2);
+      this.$('mcP95MAE').textContent = '$' + result.percentileMAE.toFixed(2);
+      this.$('mcMaxDD').textContent = result.originalMaxDrawdown.toFixed(1) + '%';
+      this.$('mcP95DD').textContent = result.percentileMaxDrawdown.toFixed(1) + '%';
+      this.$('mcReturn').textContent = (result.totalReturn >= 0 ? '+' : '') + result.totalReturn.toFixed(1) + '%';
+      this.$('mcReturn').className = 'sv mono ' + (result.totalReturn >= 0 ? 'pos' : 'neg');
+      this.$('mcTrades').textContent = result.totalTrades;
+
+      this._drawMonteCarloChart(trades, startingBalance, result);
+      this.toast('Stress Test Complete', result.verdict.substring(0, 60), 'ok');
+    } catch (e) {
+      DELTA_LOGGER.error('[App] Monte Carlo failed:', e);
+      this.toast('Error', 'Stress test failed: ' + e.message, 'err');
+    }
+
+    this.$('mcRunBtn').disabled = false;
+    this.$('mcRunBtn').textContent = 'Run Stress Test';
+  }
+
+  _drawMonteCarloChart(trades, startingBalance, result) {
+    // Store for redraws
+    this._lastMcData = { trades, startingBalance, result };
+    const cv = this.$('mcCanvas');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = cv.clientWidth, H = cv.clientHeight;
+    if (W === 0 || H === 0) return;
+
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const pnls = trades.map(t => t.pnl || 0);
+    const equity = pnls.reduce((acc, p) => [...acc, acc[acc.length - 1] + p], [startingBalance]);
+
+    let mn = Infinity, mx = -Infinity;
+    equity.forEach(v => { mn = Math.min(mn, v); mx = Math.max(mx, v); });
+    if (mx === mn) { mx += 1; mn -= 1; }
+    const pad = (mx - mn) * 0.1;
+    mn -= pad; mx += pad;
+
+    const x = i => i / (equity.length - 1) * W;
+    const y = v => H - (v - mn) / (mx - mn) * H;
+
+    // Draw original equity curve
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, 'rgba(59,130,246,.20)');
+    grad.addColorStop(1, 'rgba(59,130,246,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(equity[0]));
+    equity.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(equity[0]));
+    equity.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+    ctx.strokeStyle = '#4f8cff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw 5th percentile line (dashed)
+    const p5 = result.originalMAE * 0.5;
+    const p5y = y(startingBalance - p5);
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.moveTo(0, p5y);
+    ctx.lineTo(W, p5y);
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px JetBrains Mono';
+    ctx.fillText('MAE $' + result.originalMAE.toFixed(0), 4, p5y - 4);
+  }
+
+  _redrawMcChart() {
+    if (!this._lastMcData) return;
+    const { trades, startingBalance, result } = this._lastMcData;
+    this._drawMonteCarloChart(trades, startingBalance, result);
+  }
+
+  async loadHistoricalEvent() {
+    const sel = this.$('histEventSelect').value;
+    if (!sel) return this.toast('Select an event', 'Choose a historical event to replay', 'err');
+
+    const [exchange, symbol, date] = sel.split('|');
+    const bt = window.backtestEngine;
+    if (!bt) return this.toast('Error', 'Backtest engine not loaded', 'err');
+
+    this.toast('Loading...', 'Fetching tick data from Tardis.dev...', '');
+
+    const success = await bt.loadHistoricalEvent(exchange, symbol, date);
+    if (success) {
+      const speed = parseInt(this.$('histSpeed').value, 10) || 100;
+      bt.start({ speed });
+      this.$('histPlayPause').textContent = 'Pause';
+      this.toast('Replaying', 'Historical event at ' + speed + 'x speed', 'ok');
+    } else {
+      this.toast('Failed', 'Could not fetch historical data for this event', 'err');
+    }
+  }
+
+  toggleBacktestPlay() {
+    const bt = window.backtestEngine;
+    if (!bt) return;
+
+    if (bt.isPlaying && !bt.isPaused) {
+      bt.pause();
+      this.$('histPlayPause').textContent = 'Play';
+    } else if (bt.isPaused) {
+      bt.resume();
+      this.$('histPlayPause').textContent = 'Pause';
+    }
+  }
+
+  stopBacktest() {
+    const bt = window.backtestEngine;
+    if (!bt) return;
+    bt.stop();
+    this.$('histPlayPause').textContent = 'Play';
   }
 
   _drawCurveOn(cv) {

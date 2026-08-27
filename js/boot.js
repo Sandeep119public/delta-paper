@@ -38,6 +38,7 @@
   const keyboardShortcuts = new KeyboardShortcuts(config, eventBusInstance);
   const simulationEngine = new SimulationEngine(config, eventBusInstance);
   const backtestEngine = new BacktestEngine(config, stateManager, eventBusInstance);
+  const monteCarloEngine = new MonteCarloEngine(eventBusInstance);
   
   // Create main app
   const app = new DeltaPaperApp(config, stateManager, validator, marketService);
@@ -52,6 +53,7 @@
   window.keyboardShortcuts = keyboardShortcuts;
   window.simulationEngine = simulationEngine;
   window.backtestEngine = backtestEngine;
+  window.monteCarloEngine = monteCarloEngine;
   window.eventBus = eventBusInstance;
   
   // Initialize app immediately (UI renders first, market data streams in afterwards)
@@ -63,6 +65,7 @@
   keyboardShortcuts.init();
   simulationEngine.init();
   backtestEngine.init();
+  DELTA_LOGGER.log('[Boot] MonteCarloEngine ready');
   
   // Initialize market data asynchronously (non-blocking)
   marketService.init()

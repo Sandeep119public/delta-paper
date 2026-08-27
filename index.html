@@ -424,6 +424,66 @@
       </div>
       <div class="sub-h">Equity Curve (₹)</div>
       <div class="eq-box"><canvas id="eqCanvas2"></canvas></div>
+      <div class="sub-h">Stress Test (Monte Carlo)</div>
+      <div class="stress-test-panel">
+        <div class="st-params">
+          <label>Iterations
+            <select id="mcIterations">
+              <option value="1000">1,000</option>
+              <option value="5000">5,000</option>
+              <option value="10000" selected>10,000</option>
+            </select>
+          </label>
+          <label>Starting Balance ($)
+            <input type="number" id="mcBalance" value="10000" min="100" step="100">
+          </label>
+          <button class="big-btn green-sm" id="mcRunBtn">Run Stress Test</button>
+        </div>
+        <div id="mcProgress" style="display:none">
+          <div class="mc-bar"><div class="mc-fill" id="mcFill"></div></div>
+          <span class="mc-pct" id="mcPct">0%</span>
+        </div>
+        <div id="mcResults" style="display:none">
+          <div class="sgrid mc-grid">
+            <div class="scard"><div class="sl">Skill Prob</div><div class="sv mono" id="mcSkill">—</div></div>
+            <div class="scard"><div class="sl">Verdict</div><div class="sv mono" id="mcVerdict" style="font-size:10px">—</div></div>
+            <div class="scard"><div class="sl">MAE (orig)</div><div class="sv neg mono" id="mcMAE">—</div></div>
+            <div class="scard"><div class="sl">95th MAE</div><div class="sv mono" id="mcP95MAE">—</div></div>
+            <div class="scard"><div class="sl">Max DD</div><div class="sv neg mono" id="mcMaxDD">—</div></div>
+            <div class="scard"><div class="sl">95th DD</div><div class="sv mono" id="mcP95DD">—</div></div>
+            <div class="scard"><div class="sl">Return</div><div class="sv mono" id="mcReturn">—</div></div>
+            <div class="scard"><div class="sl">Trades</div><div class="sv mono" id="mcTrades">—</div></div>
+          </div>
+          <canvas id="mcCanvas" style="width:100%;height:160px;margin-top:8px"></canvas>
+        </div>
+      </div>
+      <div class="sub-h">Historical Events Replay</div>
+      <div class="stress-test-panel">
+        <div class="st-params">
+          <select id="histEventSelect" style="flex:1">
+            <option value="">Select an event...</option>
+            <option value="binance|btcusdt|2020-03-12">March 12, 2020 — Black Thursday</option>
+            <option value="binance|btcusdt|2022-05-09">May 9, 2022 — LUNA Death Spiral</option>
+            <option value="binance|btcusdt|2022-11-08">Nov 8, 2022 — FTX Collapse</option>
+            <option value="binance|btcusdt|2021-05-19">May 19, 2021 — China Mining Ban</option>
+            <option value="binance|btcusdt|2023-08-17">Aug 17, 2023 — SpaceX Bitcoin Sell</option>
+          </select>
+          <button class="big-btn green-sm" id="histEventLoad">Load & Replay</button>
+        </div>
+        <div class="st-speed">
+          <label>Replay Speed</label>
+          <select id="histSpeed">
+            <option value="1">1x</option>
+            <option value="10">10x</option>
+            <option value="50">50x</option>
+            <option value="100" selected>100x</option>
+            <option value="500">500x</option>
+            <option value="1000">1000x</option>
+          </select>
+          <button class="mini-btn" id="histPlayPause">Play</button>
+          <button class="mini-btn" id="histStop">Stop</button>
+        </div>
+      </div>
       <div class="danger-zone">
         <p>Reset wipes wallets, positions, history and stats.</p>
         <button class="danger-btn" id="resetBtn2">Reset Account</button>
@@ -448,6 +508,7 @@
 <script src="js/KeyboardShortcuts.js"></script>
 <script src="js/SimulationEngine.js"></script>
 <script src="js/BacktestEngine.js"></script>
+<script src="js/MonteCarloEngine.js"></script>
 <script src="js/VwapIndicator.js"></script>
 <script src="js/DepthChart.js"></script>
 <script src="js/LiquidationHeatmap.js"></script>

@@ -1,6 +1,7 @@
 /**
  * Delta Paper Trading - Slippage & Latency Simulator
  * Simulates realistic market conditions for paper trading
+ * Includes Poisson-distributed network jitter and Bernoulli packet loss
  */
 
 class SimulationEngine {
@@ -12,22 +13,20 @@ class SimulationEngine {
       latency: 200,           // 200ms default latency
       slippageModel: 'fixed', // 'fixed', 'random', 'volume'
       enableSlippage: true,
-      enableLatency: true
+      enableLatency: true,
+      packetLossRate: 0.015,  // 1.5% packet drop rate
+      jitterLambda: 3,        // Mean congestion spikes per event
+      enablePacketLoss: true,
+      enableJitter: true
     };
     this.pendingActions = new Map();
   }
 
-  /**
-   * Initialize simulation engine
-   */
   init() {
     this.loadSettings();
-    DELTA_LOGGER.log('[SimulationEngine] Initialized');
+    DELTA_LOGGER.log('[SimulationEngine] Initialized (Poisson jitter + packet loss)');
   }
 
-  /**
-   * Load settings from localStorage
-   */
   loadSettings() {
     try {
       const stored = localStorage.getItem('deltaPaper_simulation');
@@ -39,29 +38,76 @@ class SimulationEngine {
     }
   }
 
-  /**
-   * Save settings to localStorage
-   */
   saveSettings() {
     localStorage.setItem('deltaPaper_simulation', JSON.stringify(this.settings));
   }
 
-  /**
-   * Update simulation settings
-   * @param {Object} newSettings - Settings to update
-   */
   updateSettings(newSettings) {
     this.settings = { ...this.settings, ...newSettings };
     this.saveSettings();
     DELTA_LOGGER.log('[SimulationEngine] Settings updated:', this.settings);
   }
 
-  /**
-   * Get current settings
-   * @returns {Object} Current settings
-   */
   getSettings() {
     return { ...this.settings };
+  }
+
+  /**
+   * Inject realistic network latency (Poisson distribution) and packet loss.
+   * During high volatility the lambda is scaled up to simulate congestion spikes.
+   *
+   * @param {Function} callback - The tick emission function
+   * @param {Object}  [opts]    - Optional overrides { volatility }
+   */
+  injectNetworkConditions(callback, opts) {
+    if (!this.settings.enableLatency) return callback();
+
+    // 1. Packet Loss Simulation (Bernoulli trial)
+    if (this.settings.enablePacketLoss) {
+      const packetLossRate = this.settings.packetLossRate || 0.015;
+      if (Math.random() < packetLossRate) {
+        this.events.emit('network:packetDropped');
+        return; // Tick is dropped, strategy must handle stale data
+      }
+    }
+
+    // 2. Poisson Jitter Injection
+    const baseLatency = this.settings.latency || 50;
+    let lambda = this.settings.jitterLambda || 3;
+
+    // Scale jitter during high volatility
+    if (opts && opts.volatility && opts.volatility > 0.03) {
+      lambda *= (1 + opts.volatility * 10); // Spike congestion during crashes
+    }
+
+    const poissonJitter = this._getPoissonRandom(lambda);
+    const totalLatency = baseLatency + (poissonJitter * 15);
+
+    this.events.emit('network:latency', {
+      baseLatency,
+      poissonJitter,
+      totalLatency
+    });
+
+    setTimeout(() => {
+      callback();
+    }, totalLatency);
+  }
+
+  /**
+   * Knuth's algorithm for Poisson random variable generation.
+   * Models the number of events (congestion spikes) in a fixed interval.
+   *
+   * @param {number} lambda - Expected number of events
+   * @returns {number} Random Poisson-distributed integer
+   */
+  _getPoissonRandom(lambda) {
+    let L = Math.exp(-lambda), k = 0, p = 1;
+    do {
+      k++;
+      p *= Math.random();
+    } while (p > L);
+    return k - 1;
   }
 
   /**
@@ -82,13 +128,11 @@ class SimulationEngine {
         break;
 
       case 'random':
-        // Random slippage between 0 and configured max
         slippageAmount = price * this.settings.slippage * Math.random();
         break;
 
       case 'volume':
-        // Higher slippage for larger orders (simplified model)
-        const sizeFactor = Math.min(quantity / 100, 2); // Cap at 2x
+        const sizeFactor = Math.min(quantity / 100, 2);
         slippageAmount = price * this.settings.slippage * sizeFactor;
         break;
 
@@ -96,17 +140,13 @@ class SimulationEngine {
         slippageAmount = price * this.settings.slippage;
     }
 
-    // Apply volatility adjustment
     if (volatility > 0) {
       slippageAmount *= (1 + volatility);
     }
 
-    // Apply slippage in correct direction
     if (side === 1) {
-      // Buy - price goes up
       return price + slippageAmount;
     } else {
-      // Sell - price goes down
       return price - slippageAmount;
     }
   }
@@ -140,11 +180,6 @@ class SimulationEngine {
     });
   }
 
-  /**
-   * Cancel a pending delayed action
-   * @param {string} actionId - Action ID to cancel
-   * @returns {boolean} True if cancelled
-   */
   cancelPendingAction(actionId) {
     const pending = this.pendingActions.get(actionId);
     if (pending) {
@@ -155,10 +190,6 @@ class SimulationEngine {
     return false;
   }
 
-  /**
-   * Get all pending delayed actions
-   * @returns {Array} List of pending actions
-   */
   getPendingActions() {
     return Array.from(this.pendingActions.entries()).map(([id, action]) => ({
       id,
@@ -167,22 +198,15 @@ class SimulationEngine {
     }));
   }
 
-  /**
-   * Simulate order book depth
-   * @param {number} midPrice - Mid-market price
-   * @param {number} depth - Number of levels
-   * @returns {Object} Simulated order book
-   */
   simulateOrderBook(midPrice, depth = 10) {
-    const spread = midPrice * 0.001; // 0.1% spread
+    const spread = midPrice * 0.001;
     const asks = [];
     const bids = [];
 
     for (let i = 0; i < depth; i++) {
       const askPrice = midPrice + (spread / 2) + (midPrice * 0.0001 * i);
       const bidPrice = midPrice - (spread / 2) - (midPrice * 0.0001 * i);
-      
-      // Simulate volume (decreases away from mid)
+
       const askVolume = Math.random() * (10 - i) + 0.1;
       const bidVolume = Math.random() * (10 - i) + 0.1;
 
@@ -193,40 +217,25 @@ class SimulationEngine {
     return { asks, bids, spread };
   }
 
-  /**
-   * Calculate market impact
-   * @param {number} orderSize - Order size in USD
-   * @param {number} averageVolume - Average daily volume
-   * @returns {number} Market impact as decimal
-   */
   calculateMarketImpact(orderSize, averageVolume) {
     if (averageVolume === 0) return 0;
-    
-    // Simplified market impact model
+
     const participationRate = orderSize / averageVolume;
-    return Math.sqrt(participationRate) * 0.1; // Square root model
+    return Math.sqrt(participationRate) * 0.1;
   }
 
-  /**
-   * Simulate fill probability based on market conditions
-   * @param {Object} params - Order parameters
-   * @returns {number} Fill probability (0-1)
-   */
   calculateFillProbability({ price, currentPrice, side, size, volatility }) {
     let probability = 1.0;
 
-    // Distance from market affects fill probability
     const distance = Math.abs(price - currentPrice) / currentPrice;
-    if (distance > 0.01) { // More than 1% away
+    if (distance > 0.01) {
       probability *= Math.max(0, 1 - distance * 10);
     }
 
-    // Volatility affects fill probability
-    if (volatility > 0.02) { // High volatility
+    if (volatility > 0.02) {
       probability *= 0.9;
     }
 
-    // Large orders have lower fill probability
     if (size > 10000) {
       probability *= 0.95;
     }
@@ -234,12 +243,6 @@ class SimulationEngine {
     return Math.max(0, Math.min(1, probability));
   }
 
-  /**
-   * Generate realistic trade execution
-   * @param {Object} order - Original order
-   * @param {Object} market - Current market data
-   * @returns {Object} Execution details
-   */
   simulateExecution(order, market) {
     const slippage = this.applySlippage({
       price: market.price,
@@ -266,4 +269,3 @@ class SimulationEngine {
     };
   }
 }
-

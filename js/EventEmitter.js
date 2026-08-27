@@ -210,6 +210,17 @@ const EVENTS = {
   WS_CONNECTED: 'ws:connected',
   WS_DISCONNECTED: 'ws:disconnected',
   API_ERROR: 'api:error',
-  CIRCUIT_BREAKER: 'circuit:breaker'
+  CIRCUIT_BREAKER: 'circuit:breaker',
+
+  // Network simulation events
+  NETWORK_PACKET_DROPPED: 'network:packetDropped',
+  NETWORK_LATENCY: 'network:latency',
+
+  // Monte Carlo stress test events
+  MONTECARLO_PROGRESS: 'montecarlo:progress',
+  MONTECARLO_COMPLETE: 'montecarlo:complete',
+
+  // Backtest events
+  BACKTEST_EVENT_LOADED: 'backtest:eventLoaded'
 };
 
