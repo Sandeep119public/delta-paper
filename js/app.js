@@ -30,6 +30,8 @@ class DeltaPaperApp {
     this._tf = '1m';
     this._tfSec = 60;
     this._curCandle = null;
+    this._historyCache = [];
+    this._loadingOlder = false;
 
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
@@ -100,6 +102,28 @@ class DeltaPaperApp {
         this._loadCandles(this.selSym, b.dataset.tf);
       });
     });
+
+    this._tvChart.timeScale().subscribeVisibleLogicalRangeChange(async (range) => {
+      if (range && range.from < 50 && !this._loadingOlder && this._historyCache.length) {
+        this._loadingOlder = true;
+        const first = this._historyCache[0].time;
+        const end = first - 1;
+        const start = end - this._tfSec * 500;
+        const url = 'https://api.india.delta.exchange/v2/history/candles'
+          + `?resolution=${this._tf}&symbol=${this.selSym}&start=${start}&end=${end}`;
+        try {
+          const json = await (await fetch(url)).json();
+          if (json.success && Array.isArray(json.result) && json.result.length) {
+            const older = json.result
+              .map(c => ({ time: c.time, open: +c.open, high: +c.high, low: +c.low, close: +c.close }))
+              .sort((a, b) => a.time - b.time);
+            this._historyCache = older.concat(this._historyCache);
+            if (this._tvCandle) this._tvCandle.setData(this._historyCache);
+          }
+        } catch (e) { /* ignore */ }
+        this._loadingOlder = false;
+      }
+    });
   }
 
   _loadCandles(sym, tf) {
@@ -107,6 +131,7 @@ class DeltaPaperApp {
     if (tf) this._tf = tf;
     this._tfSec = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }[this._tf] || 60;
     this._curCandle = null;
+    this._historyCache = [];
 
     const end = Math.floor(Date.now() / 1000);
     const start = end - this._tfSec * 500;
@@ -117,17 +142,19 @@ class DeltaPaperApp {
     fetch(url)
       .then(r => r.json())
       .then(json => {
-        if (!json.result) return;
-        const r = json.result;
-        const data = r.time.map((t, i) => ({
-          time: t,
-          open: +r.open[i], high: +r.high[i],
-          low: +r.low[i], close: +r.close[i],
-        }));
+        if (!json.success || !Array.isArray(json.result) || !json.result.length) return;
+        const data = json.result
+          .map(c => ({ time: c.time, open: +c.open, high: +c.high, low: +c.low, close: +c.close }))
+          .sort((a, b) => a.time - b.time);
+        this._historyCache = data;
         if (this._tvCandle) this._tvCandle.setData(data);
+        this._curCandle = { ...data[data.length - 1] };
         if (this._tvChart) this._tvChart.timeScale().scrollToRealTime();
       })
-      .catch(e => DELTA_LOGGER.log('[Chart] candle load failed', e));
+      .catch(e => {
+        DELTA_LOGGER.log('[Chart] candle load failed', e);
+        setTimeout(() => this._loadCandles(this.selSym, this._tf), 5000);
+      });
   }
 
   _feedTick(price) {
