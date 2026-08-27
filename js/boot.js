@@ -11,6 +11,9 @@
   // Initialize modules in order
   const config = DELTA_CONFIG;
   
+  // Create event bus
+  const eventBusInstance = eventBus;
+  
   // Create services
   const apiService = new DeltaApiService(config);
   const wsService = new WebSocketService(config);
@@ -25,19 +28,48 @@
   // Create validator
   const validator = new InputValidator(config);
   
+  // Create new modules
+  const orderEngine = new OrderEngine(config, marketService, eventBusInstance);
+  const fundingSimulator = new FundingSimulator(config, stateManager, marketService, eventBusInstance);
+  const riskMetrics = new RiskMetrics(config, stateManager);
+  const keyboardShortcuts = new KeyboardShortcuts(config, eventBusInstance);
+  const simulationEngine = new SimulationEngine(config, eventBusInstance);
+  const backtestEngine = new BacktestEngine(config, stateManager, eventBusInstance);
+  
   // Create main app
   const app = new DeltaPaperApp(config, stateManager, validator, marketService);
   
   // Make app globally available for legacy compatibility
   window.app = app;
   
+  // Make modules available globally for debugging
+  window.orderEngine = orderEngine;
+  window.fundingSimulator = fundingSimulator;
+  window.riskMetrics = riskMetrics;
+  window.keyboardShortcuts = keyboardShortcuts;
+  window.simulationEngine = simulationEngine;
+  window.backtestEngine = backtestEngine;
+  window.eventBus = eventBusInstance;
+  
   // Initialize app immediately (UI renders first, market data streams in afterwards)
   app.init();
+  
+  // Initialize new modules
+  orderEngine.init();
+  fundingSimulator.init();
+  keyboardShortcuts.init();
+  simulationEngine.init();
+  backtestEngine.init();
   
   // Initialize market data asynchronously (non-blocking)
   marketService.init()
     .then(() => DELTA_LOGGER.log('[Boot] Market data initialized'))
     .catch(e => DELTA_LOGGER.error('[Boot] market init failed', e));
+  
+  // Initialize IndexedDB
+  storage.init()
+    .then(() => DELTA_LOGGER.log('[Boot] IndexedDB initialized'))
+    .catch(e => DELTA_LOGGER.warn('[Boot] IndexedDB init failed, using localStorage fallback'));
   
   // Register service worker for PWA
   if ('serviceWorker' in navigator) {
@@ -47,4 +79,5 @@
   }
   
   DELTA_LOGGER.log('[Boot] Application ready');
+  DELTA_LOGGER.log('[Boot] Keyboard shortcuts: Press Shift+? for help');
 })();
