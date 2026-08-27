@@ -9,6 +9,8 @@ class AppState {
     this.state = null;
     this.listeners = new Set();
     this.storage = storage || null;
+    this._saveTimer = null;
+    this._dirty = false;
   }
 
   /**
@@ -74,30 +76,62 @@ class AppState {
         this.state = this.createDefault();
         DELTA_LOGGER.log('[State] Created default state');
       }
-      this.save();
+      this.flushSave();
       return this.state;
     } catch (e) {
       DELTA_LOGGER.error('[State] Load failed:', e);
       this.state = this.createDefault();
-      this.save();
+      this.flushSave();
       return this.state;
     }
   }
 
   /**
    * Save state to localStorage (sync) and IndexedDB (async background)
+   * Debounced: batches rapid updates into a single write every 2 seconds
    */
   save() {
+    if (!this.state) return;
+    this._dirty = true;
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this._flushSave();
+    }, 2000);
+  }
+
+  /**
+   * Immediately persist state (for critical user actions)
+   */
+  flushSave() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
+    this._flushSave();
+  }
+
+  /** @private */
+  _flushSave() {
+    if (!this._dirty || !this.state) return;
     try {
-      if (!this.state) return;
       this.state.lastSeen = Date.now();
-      const serialized = JSON.parse(JSON.stringify(this.state));
-      localStorage.setItem(this.config.STORE_KEY, JSON.stringify(serialized));
+      localStorage.setItem(this.config.STORE_KEY, JSON.stringify(this.state));
       if (this.storage && this.storage.db) {
-        this.storage.put('settings', { key: this.config.STORE_KEY, ...serialized }).catch(e => {
+        const clone = { key: this.config.STORE_KEY };
+        for (const k in this.state) {
+          const v = this.state[k];
+          if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+            clone[k] = { ...v };
+          } else {
+            clone[k] = Array.isArray(v) ? v.map(i => typeof i === 'object' ? { ...i } : i) : v;
+          }
+        }
+        this.storage.put('settings', clone).catch(e => {
           DELTA_LOGGER.warn('[State] IndexedDB save failed:', e);
         });
       }
+      this._dirty = false;
     } catch (e) {
       DELTA_LOGGER.error('[State] Save failed:', e);
       throw new Error('Failed to save state. Storage may be full.');
@@ -117,7 +151,7 @@ class AppState {
    */
   reset() {
     this.state = this.createDefault();
-    this.save();
+    this.flushSave();
     this.notifyListeners();
     DELTA_LOGGER.log('[State] Reset to defaults');
   }

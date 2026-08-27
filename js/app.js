@@ -33,6 +33,8 @@ class DeltaPaperApp {
     this._historyCache = [];
     this._loadingOlder = false;
     this._isRendering = false;
+    this._posCards = {};
+    this._posKeyStr = '';
 
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
@@ -542,8 +544,9 @@ class DeltaPaperApp {
       return this.toast('No live price yet', 'Waiting for Delta India feed…', 'err');
     }
 
-    const lots = this.curLots;
-    if (!(lots >= 1)) return this.toast('Set quantity', 'Minimum 1 lot', 'err');
+    const v = this.validator.validateLots(this.curLots, this.selSym);
+    if (!v.isValid) return this.toast('Set quantity', v.error, 'err');
+    const lots = v.value;
 
     const S = this.state.get();
     const lev = S.lev;
@@ -691,8 +694,9 @@ class DeltaPaperApp {
 
   pushHist(sym, label, qty, price, pnl) {
     const S = this.state.get();
-    const history = [{ t: Date.now(), sym, label, qty, price, pnl }, ...S.history];
-    if (history.length > 50) history.length = 50;
+    const history = S.history;
+    history.unshift({ t: Date.now(), sym, label, qty, price, pnl });
+    if (history.length > 100) history.length = 100;
     this.state.update({ history });
   }
 
@@ -740,7 +744,7 @@ class DeltaPaperApp {
 
       const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
       history.unshift({ t: Date.now(), sym: k, label: '⚡ Liquidated', qty: pos.qty, price: this.liqPrice(pos), pnl: -pos.margin });
-      if (history.length > 50) history.length = 50;
+      if (history.length > 100) history.length = 100;
 
       this.toast('LIQUIDATED', '⚡ ' + shortName + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
     });
@@ -891,11 +895,10 @@ class DeltaPaperApp {
   }
 
   doDeposit() {
-    const amt = parseFloat(this.$('depAmt').value);
-    if (!isFinite(amt) || amt < this.config.MIN_DEPOSIT) {
-      return this.toast('Invalid amount', 'Minimum deposit is ₹' + this.config.MIN_DEPOSIT, 'err');
-    }
+    const v = this.validator.validateDeposit(this.$('depAmt').value);
+    if (!v.isValid) return this.toast('Invalid amount', v.error, 'err');
 
+    const amt = v.value;
     const method = document.querySelector('#depMethods label.on').dataset.m;
     const S = this.state.get();
 
@@ -912,15 +915,11 @@ class DeltaPaperApp {
   }
 
   doWithdraw() {
-    const amt = parseFloat(this.$('wdAmt').value);
     const S = this.state.get();
+    const v = this.validator.validateWithdrawal(this.$('wdAmt').value, S.inr);
+    if (!v.isValid) return this.toast('Invalid amount', v.error, 'err');
 
-    if (!isFinite(amt) || amt < this.config.MIN_WITHDRAW) {
-      return this.toast('Invalid amount', 'Minimum withdrawal is ₹' + this.config.MIN_WITHDRAW, 'err');
-    }
-    if (amt > S.inr) {
-      return this.toast('Insufficient INR', 'Available: ' + this.fmtInr(S.inr), 'err');
-    }
+    const amt = v.value;
 
     this.state.update({ inr: S.inr - amt });
     this.ledgerPush('Withdraw', 'HDFC ••1234', -amt, 0);
@@ -977,11 +976,14 @@ class DeltaPaperApp {
   }
 
   doConvert() {
-    const amt  = parseFloat(this.$('cvtAmt').value);
     const rate = this.state.rate || this.config.BASE_RATE;
     const S = this.state.get();
+    const fromCurrency = this.cvtDir === 'i2u' ? 'INR' : 'USD';
+    const available = this.cvtDir === 'i2u' ? S.inr : S.usd;
+    const v = this.validator.validateConversion(this.$('cvtAmt').value, available, fromCurrency);
+    if (!v.isValid) return this.toast('Invalid amount', v.error, 'err');
 
-    if (!isFinite(amt) || amt <= 0) return this.toast('Invalid amount', 'Enter an amount', 'err');
+    const amt = v.value;
 
     if (this.cvtDir === 'i2u') {
       if (amt > S.inr) return this.toast('Insufficient INR', 'Available: ' + this.fmtInr(S.inr), 'err');
@@ -1006,8 +1008,9 @@ class DeltaPaperApp {
 
   ledgerPush(type, detail, dInr, dUsd) {
     const S = this.state.get();
-    const ledger = [{ t: Date.now(), type, detail, dInr, dUsd }, ...S.ledger];
-    if (ledger.length > 40) ledger.length = 40;
+    const ledger = S.ledger;
+    ledger.unshift({ t: Date.now(), type, detail, dInr, dUsd });
+    if (ledger.length > 200) ledger.length = 200;
     this.state.update({ ledger });
   }
 
@@ -1025,8 +1028,9 @@ class DeltaPaperApp {
     const S = this.state.get();
     const rate = this.state.rate || this.config.BASE_RATE;
     const eqInr = (S.inr || 0) + (this.totals().equity || 0) * rate;
-    const equityCurve = [...S.equityCurve, { t: Date.now(), e: eqInr }];
-    if (equityCurve.length > 100) equityCurve.shift();
+    const equityCurve = S.equityCurve;
+    equityCurve.push({ t: Date.now(), e: eqInr });
+    if (equityCurve.length > 200) equityCurve.shift();
     this.state.update({ equityCurve });
   }
 
@@ -1050,12 +1054,32 @@ class DeltaPaperApp {
     return locked;
   }
 
-  fmtUsd(x)    { return Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  fmtUsd0(x)   { return Number(x).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
-  fmtSign(x)   { return (x >= 0 ? '+' : '') + this.fmtUsd(x); }
-  fmtInr(x)    { return '₹' + Number(x).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
-  fmtInrS(x)   { return (x >= 0 ? '+' : '-') + '₹' + Math.abs(x).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
-  fmtPrice(p, d){ return Number(p).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  _fmtCommas(n) {
+    const s = Math.abs(n).toFixed(2);
+    const [int, dec] = s.split('.');
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (n < 0 ? '-' : '') + grouped + '.' + dec;
+  }
+
+  _fmtCommas0(n) {
+    const s = Math.abs(Math.round(n)).toString();
+    const grouped = s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (n < 0 ? '-' : '') + grouped;
+  }
+
+  _fmtCommasDec(n, d) {
+    const s = Math.abs(n).toFixed(d);
+    const [int, dec] = s.split('.');
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return (n < 0 ? '-' : '') + grouped + '.' + dec;
+  }
+
+  fmtUsd(x)    { return this._fmtCommas(x); }
+  fmtUsd0(x)   { return this._fmtCommas0(x); }
+  fmtSign(x)   { return (x >= 0 ? '+' : '') + this._fmtCommas(x); }
+  fmtInr(x)    { return '₹' + this._fmtCommas0(x); }
+  fmtInrS(x)   { return (x >= 0 ? '+' : '-') + '₹' + this._fmtCommas0(Math.abs(x)); }
+  fmtPrice(p, d){ return this._fmtCommasDec(p, d); }
   fmtPxShort(p){ if (p >= 1000) return (p/1000).toFixed(2)+'k'; if (p >= 1) return p.toFixed(2); return p.toFixed(4); }
   fmtQty(q)    { let s = q.toFixed(6); return s.replace(/0+$/, '').replace(/\.$/, ''); }
   fmtLot(lot)  { let s = lot.toFixed(6); return s.replace(/0+$/, '').replace(/\.$/, ''); }
@@ -1087,7 +1111,7 @@ class DeltaPaperApp {
       this.renderAll();
     });
   }
-  flushSave(force) { this.state.save(); }
+  flushSave(force) { this.state.flushSave(); }
 
   startSimulationLoop() {
     setInterval(() => {
@@ -1104,12 +1128,22 @@ class DeltaPaperApp {
     this.renderQty();
     this.renderEntry();
     this.renderPositions();
-    this.renderPosDetailLive();
-    this.renderHistory();
-    this.renderFunds();
-    this.renderMenu();
-    this.drawEquityCurve();
 
+    if (this.posDetailSym && this.$('posOverlay') && this.$('posOverlay').classList.contains('show')) {
+      this.renderPosDetailLive();
+    }
+    if (this.$('hisOverlay') && this.$('hisOverlay').classList.contains('show')) {
+      this.renderHistory();
+    }
+    if (this.$('fundsOverlay') && this.$('fundsOverlay').classList.contains('show')) {
+      this.renderFunds();
+    }
+    if (this.$('menuOverlay') && this.$('menuOverlay').classList.contains('show')) {
+      this.renderMenu();
+    }
+    if (this.$('eqCanvas') && this.$('eqCanvas').closest('.show')) {
+      this.drawEquityCurve();
+    }
     if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) {
       this.renderCvtPreview();
     }
@@ -1263,92 +1297,96 @@ class DeltaPaperApp {
 
     const list = this.$('posList');
     if (keys.length === 0) {
-      list.replaceChildren();
+      if (this._posKeyStr) {
+        list.replaceChildren();
+        this._posCards = {};
+        this._posKeyStr = '';
+      }
       return;
     }
 
-    const fragment = document.createDocumentFragment();
-    keys.forEach(k => {
-      const pos = S.positions[k];
-      const m = this.market.getMarket(k);
-      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
+    const keyStr = keys.join(',');
+    const structureChanged = keyStr !== this._posKeyStr;
 
-      const card = document.createElement('div');
-      card.className = 'pos-card ' + (pos.dir === 1 ? 'long' : 'short');
-      card.dataset.sym = k;
+    if (structureChanged) {
+      list.replaceChildren();
+      this._posCards = {};
+      const fragment = document.createDocumentFragment();
+      keys.forEach(k => {
+        const pos = S.positions[k];
+        const m = this.market.getMarket(k);
+        const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
 
-      // Row 1
-      const row1 = document.createElement('div');
-      row1.className = 'pc-row1';
+        const card = document.createElement('div');
+        card.className = 'pos-card ' + (pos.dir === 1 ? 'long' : 'short');
+        card.dataset.sym = k;
 
-      const sideTag = document.createElement('span');
-      sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
-      sideTag.textContent = (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x';
+        const row1 = document.createElement('div');
+        row1.className = 'pc-row1';
 
-      const symEl = document.createElement('span');
-      symEl.className = 'pc-sym';
-      symEl.textContent = shortName;
+        const sideTag = document.createElement('span');
+        sideTag.className = 'side-tag ' + (pos.dir === 1 ? 'long' : 'short');
+        sideTag.textContent = (pos.dir === 1 ? 'LONG' : 'SHORT') + ' ' + pos.lev + 'x';
 
-      const qtyEl = document.createElement('span');
-      qtyEl.className = 'pc-qty';
-      qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
+        const symEl = document.createElement('span');
+        symEl.className = 'pc-sym';
+        symEl.textContent = shortName;
 
-      const upnlEl = document.createElement('span');
-      upnlEl.className = 'pc-upnl';
-      upnlEl.textContent = '—';
+        const qtyEl = document.createElement('span');
+        qtyEl.className = 'pc-qty';
+        qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
 
-      row1.append(sideTag, symEl, qtyEl, upnlEl);
+        const upnlEl = document.createElement('span');
+        upnlEl.className = 'pc-upnl';
+        upnlEl.textContent = '—';
 
-      // Row 2
-      const row2 = document.createElement('div');
-      row2.className = 'pc-row2';
+        row1.append(sideTag, symEl, qtyEl, upnlEl);
 
-      const inEl = document.createElement('span');
-      inEl.dataset.in = '';
-      inEl.textContent = 'In ' + this.fmtPxShort(pos.entry);
+        const row2 = document.createElement('div');
+        row2.className = 'pc-row2';
 
-      const mkEl = document.createElement('span');
-      mkEl.dataset.mk = '';
-      mkEl.textContent = 'Mk —';
+        const inEl = document.createElement('span');
+        inEl.dataset.in = '';
+        inEl.textContent = 'In ' + this.fmtPxShort(pos.entry);
 
-      const tpSlEl = document.createElement('span');
-      tpSlEl.className = 'pc-tpsl';
-      const tpSlTxt = (pos.tp || pos.sl)
-        ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
-           (pos.tp && pos.sl ? ' • ' : '') +
-           (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : ''))
-        : '';
-      tpSlEl.textContent = tpSlTxt;
+        const mkEl = document.createElement('span');
+        mkEl.dataset.mk = '';
+        mkEl.textContent = 'Mk —';
 
-      const arrowEl = document.createElement('span');
-      arrowEl.className = 'pc-arrow';
-      arrowEl.textContent = '›';
+        const tpSlEl = document.createElement('span');
+        tpSlEl.className = 'pc-tpsl';
+        const tpSlTxt = (pos.tp || pos.sl)
+          ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
+             (pos.tp && pos.sl ? ' • ' : '') +
+             (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : ''))
+          : '';
+        tpSlEl.textContent = tpSlTxt;
 
-      row2.append(inEl, mkEl, tpSlEl, arrowEl);
+        const arrowEl = document.createElement('span');
+        arrowEl.className = 'pc-arrow';
+        arrowEl.textContent = '›';
 
-      card.append(row1, row2);
-      card.addEventListener('click', () => this.openPosDetail(k));
-      fragment.appendChild(card);
-    });
+        row2.append(inEl, mkEl, tpSlEl, arrowEl);
+        card.append(row1, row2);
+        card.addEventListener('click', () => this.openPosDetail(k));
+        this._posCards[k] = { card, upnlEl, mkEl };
+        fragment.appendChild(card);
+      });
+      list.appendChild(fragment);
+      this._posKeyStr = keyStr;
+    }
 
-    list.replaceChildren(fragment);
-
-    // Update P&L
     keys.forEach(k => {
       const pos = S.positions[k];
       const m = this.market.getMarket(k);
       if (!m) return;
       const up = (m.price - pos.entry) * pos.qty * pos.dir;
       const roe = up / pos.margin * 100;
-
-      const card = list.querySelector('[data-sym="' + k + '"]');
-      if (card) {
-        const upEl = card.querySelector('.pc-upnl');
-        const mkEl = card.querySelector('[data-mk]');
-        mkEl.textContent = 'Mk ' + (m.price > 0 ? this.fmtPxShort(m.price) : '…');
-        upEl.textContent = this.fmtSign(up) + ' (' + (roe >= 0 ? '+' : '') + roe.toFixed(1) + '%)';
-        upEl.className = 'pc-upnl mono ' + (up >= 0 ? 'pos' : 'neg');
-      }
+      const refs = this._posCards[k];
+      if (!refs) return;
+      refs.mkEl.textContent = 'Mk ' + (m.price > 0 ? this.fmtPxShort(m.price) : '…');
+      refs.upnlEl.textContent = this.fmtSign(up) + ' (' + (roe >= 0 ? '+' : '') + roe.toFixed(1) + '%)';
+      refs.upnlEl.className = 'pc-upnl mono ' + (up >= 0 ? 'pos' : 'neg');
     });
   }
 
