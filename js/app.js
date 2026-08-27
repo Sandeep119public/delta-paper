@@ -1068,7 +1068,7 @@ class DeltaPaperApp {
   }
 
   _fmtCommasDec(n, d) {
-    const s = Math.abs(n).toFixed(d);
+    const s = Math.abs(n).toFixed(d ?? 2);
     const [int, dec] = s.split('.');
     const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return (n < 0 ? '-' : '') + grouped + '.' + dec;
