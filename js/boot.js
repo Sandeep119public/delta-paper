@@ -11,18 +11,22 @@
   // Initialize modules in order
   const config = DELTA_CONFIG;
   
+  // Create services
+  const apiService = new DeltaApiService(config);
+  const wsService = new WebSocketService(config);
+  
   // Create state manager
   const stateManager = new AppState(config);
   stateManager.load();
   
-  // Create market data manager
-  const marketManager = new MarketDataManager(config);
+  // Create market data service (coordinator)
+  const marketService = new MarketDataService(config, apiService, wsService);
   
   // Create validator
   const validator = new InputValidator(config);
   
   // Create main app
-  const app = new DeltaPaperApp(config, stateManager, validator, marketManager);
+  const app = new DeltaPaperApp(config, stateManager, validator, marketService);
   
   // Make app globally available for legacy compatibility
   window.app = app;
@@ -31,7 +35,7 @@
   app.init();
   
   // Initialize market data asynchronously (non-blocking)
-  marketManager.init()
+  marketService.init()
     .then(() => DELTA_LOGGER.log('[Boot] Market data initialized'))
     .catch(e => DELTA_LOGGER.error('[Boot] market init failed', e));
   
