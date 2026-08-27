@@ -20,8 +20,8 @@
 <body>
 <div id="toasts"></div>
 
-<!-- Sticky Top Navigation -->
-<header class="top-nav">
+<!-- ═══ HEADER ═══ -->
+<header class="top">
   <div class="nav-left">
     <div class="logo">Δ</div>
     <div class="brand">
@@ -49,132 +49,124 @@
   </div>
 </header>
 
-<!-- Main Dashboard Grid -->
-<main class="dashboard">
-  <!-- COLUMN 1: Markets & Order Ticket -->
-  <section class="col-trading">
-    <div class="panel market-panel">
-      <div class="panel-h">
-        <h3>Markets</h3>
-        <span class="feed-status">
-          <span class="feed-dot" id="feedDot"></span>
-          <span class="feed-mini" id="feedText">SYNC…</span>
-        </span>
-      </div>
-      <div class="market-list" id="symRow"></div>
-    </div>
+<!-- ═══ TERMINAL GRID ═══ -->
+<main class="terminal">
 
-    <div class="chart-wrap">
-      <div class="panel-h">
-        <h3 id="chartTitle">Chart</h3>
-      </div>
-      <div id="tv-chart-container"></div>
+  <!-- LEFT: Watchlist -->
+  <section class="panel zone-markets">
+    <div class="panel-h">
+      <h3>Markets</h3>
+      <span class="feed-status">
+        <span class="feed-dot" id="feedDot"></span>
+        <span class="feed-mini" id="feedText">SYNC…</span>
+      </span>
     </div>
+    <div class="panel-body" id="symRow"></div>
+  </section>
 
-    <div class="panel order-panel">
+  <!-- CENTER TOP: Chart -->
+  <section class="panel zone-chart">
+    <div class="panel-h"><h3 id="chartTitle">Chart</h3></div>
+    <div class="panel-body chart-body"><div id="tv-chart-container"></div></div>
+  </section>
+
+  <!-- CENTER BOTTOM: Positions -->
+  <section class="panel zone-positions">
+    <div class="panel-h">
+      <h3>Active Positions <span class="cnt" id="cntPos">0</span></h3>
+      <button class="mini-btn" id="closeAllBtn">Close All</button>
+    </div>
+    <div class="panel-body" id="posList">
+      <div class="empty" id="posEmpty">No open positions — tap BUY or SELL</div>
+    </div>
+  </section>
+
+  <!-- RIGHT: Order Ticket + Wallets + Equity -->
+  <aside class="zone-right">
+    <section class="panel order-panel">
       <div class="panel-h">
         <h3 id="mktTitle">BTCUSD • PERP</h3>
       </div>
-
-      <div class="price-strip">
-        <span class="ps-price mono" id="psPrice">…</span>
-        <span class="ps-chg mono" id="psChg">0.00%</span>
-        <span class="ps-fund mono" id="psFund"></span>
-      </div>
-
-      <div class="order-form">
-        <div class="qty-wrap">
-          <label class="qty-label">Quantity <span class="lot-hint" id="lotLabel">1 lot = ...</span></label>
-          <div class="qty-controls">
-            <button class="step-btn" id="qtyMinus">−</button>
-            <div class="qty-input-wrap">
-              <input type="number" id="qtyIn" value="1" min="1">
-              <span class="qty-unit">LOTS</span>
+      <div class="panel-body">
+        <div class="price-strip">
+          <span class="ps-price mono" id="psPrice">…</span>
+          <span class="ps-chg mono" id="psChg">0.00%</span>
+          <span class="ps-fund mono" id="psFund"></span>
+        </div>
+        <div class="order-form">
+          <div class="qty-wrap">
+            <label class="qty-label">Quantity <span class="lot-hint" id="lotLabel">1 lot = ...</span></label>
+            <div class="qty-controls">
+              <button class="step-btn" id="qtyMinus">−</button>
+              <div class="qty-input-wrap">
+                <input type="number" id="qtyIn" value="1" min="1">
+                <span class="qty-unit">LOTS</span>
+              </div>
+              <button class="step-btn" id="qtyPlus">+</button>
             </div>
-            <button class="step-btn" id="qtyPlus">+</button>
+            <div class="qk">
+              <button data-q="25">$25</button>
+              <button data-q="50">$50</button>
+              <button data-q="100">$100</button>
+              <button data-q="max">MAX</button>
+            </div>
+            <div class="qty-info" id="qtyInfo">—</div>
           </div>
-          <div class="qk">
-            <button data-q="25">$25</button>
-            <button data-q="50">$50</button>
-            <button data-q="100">$100</button>
-            <button data-q="max">MAX</button>
+          <div class="leverage-wrap">
+            <label class="lev-label">Leverage <button class="lev-trigger" id="qtyLevRt">10x ⚙</button></label>
+            <input type="range" id="levRange" min="1" max="20" value="10">
           </div>
-          <div class="qty-info" id="qtyInfo">—</div>
-        </div>
-
-        <div class="leverage-wrap">
-          <label class="lev-label">Leverage <button class="lev-trigger" id="qtyLevRt">10x ⚙</button></label>
-          <input type="range" id="levRange" min="1" max="20" value="10">
-        </div>
-
-        <div class="conv-hint" id="convHint" style="display:none">
-          <span>Low margin — convert INR to USD</span>
-          <button id="convHintBtn">Convert</button>
-        </div>
-
-        <div class="entry-grid">
-          <button class="entry-btn buy" id="buyBtn">
-            <span class="el">BUY / LONG</span>
-            <small id="buySub">—</small>
-          </button>
-          <button class="entry-btn sell" id="sellBtn">
-            <span class="el">SELL / SHORT</span>
-            <small id="sellSub">—</small>
-          </button>
+          <div class="conv-hint" id="convHint" style="display:none">
+            <span>Low margin — convert INR to USD</span>
+            <button id="convHintBtn">Convert</button>
+          </div>
+          <div class="entry-grid">
+            <button class="entry-btn buy" id="buyBtn">
+              <span class="el">BUY / LONG</span>
+              <small id="buySub">—</small>
+            </button>
+            <button class="entry-btn sell" id="sellBtn">
+              <span class="el">SELL / SHORT</span>
+              <small id="sellSub">—</small>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- COLUMN 2: Active Positions -->
-  <section class="col-positions">
-    <div class="panel pos-panel">
-      <div class="panel-h">
-        <h3>Active Positions <span class="cnt" id="cntPos">0</span></h3>
-        <button class="mini-btn" id="closeAllBtn">Close All</button>
-      </div>
-      <div id="posList">
-        <div class="empty" id="posEmpty">No open positions — tap BUY or SELL</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- COLUMN 3: Account & Wallets -->
-  <section class="col-account">
-    <div class="panel eq-panel">
-      <div class="panel-h">
-        <h3>Equity Curve</h3>
-      </div>
-      <div class="eq-box">
-        <canvas id="eqCanvas"></canvas>
-      </div>
-    </div>
-    <div class="panel funds-panel">
+    <section class="panel wallets-panel">
       <div class="panel-h">
         <h3>Wallets</h3>
         <button class="mini-btn" id="openDep">Deposit</button>
       </div>
-      <div class="wallets">
-        <div class="wcard">
-          <span class="wl">INR Wallet</span>
-          <div class="wv mono" id="fwInr">₹0</div>
-          <div class="ws mono">UPI / IMPS / Netbanking (sim)</div>
-          <div class="act-row" style="margin-top:8px;gap:6px">
-            <button class="mini-btn" id="openWd">Withdraw</button>
-            <button class="mini-btn" id="openCvt">Convert ⇄</button>
+      <div class="panel-body">
+        <div class="wallets">
+          <div class="wcard">
+            <span class="wl">INR Wallet</span>
+            <div class="wv mono" id="fwInr">₹0</div>
+            <div class="ws mono">UPI / IMPS / Netbanking (sim)</div>
+            <div class="act-row" style="margin-top:8px;gap:6px">
+              <button class="mini-btn" id="openWd">Withdraw</button>
+              <button class="mini-btn" id="openCvt">Convert ⇄</button>
+            </div>
+          </div>
+          <div class="wcard">
+            <span class="wl">USD Margin</span>
+            <div class="wv mono" id="fwUsd">0 USD</div>
+            <div class="ws mono" id="fwUsdSub">≈ ₹0</div>
           </div>
         </div>
-        <div class="wcard">
-          <span class="wl">USD Margin</span>
-          <div class="wv mono" id="fwUsd">0 USD</div>
-          <div class="ws mono" id="fwUsdSub">≈ ₹0</div>
-        </div>
       </div>
-    </div>
-  </section>
+    </section>
+
+    <section class="panel equity-panel">
+      <div class="panel-h"><h3>Equity Curve</h3></div>
+      <div class="panel-body eq-body"><canvas id="eqCanvas"></canvas></div>
+    </section>
+  </aside>
 </main>
 
-<!-- Mobile Bottom Navigation -->
+<!-- ═══ MOBILE BOTTOM NAV ═══ -->
 <nav class="bottom-nav">
   <button class="nav-btn active" data-tab="trading">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-2-2-4 4"/></svg>
@@ -417,12 +409,6 @@
     </div>
   </div>
 </div>
-
-<!-- Footer (desktop) -->
-<footer class="app-footer">
-  Live data: <b>Delta Exchange India</b> public API &bull; Lot sizes from official contract specs.<br>
-  Trades are 100% simulated paper orders. Not affiliated with Delta Exchange.
-</footer>
 
 <script src="js/config.js"></script>
 <script src="js/console.js"></script>

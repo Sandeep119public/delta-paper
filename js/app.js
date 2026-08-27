@@ -56,13 +56,12 @@ class DeltaPaperApp {
     if (!container || typeof LightweightCharts === 'undefined') return;
 
     this._tvChart = LightweightCharts.createChart(container, {
+      autoSize: true,
       layout: { background: { color: '#111827' }, textColor: '#94a3b8', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
       grid: { vertLines: { color: 'rgba(36, 52, 72, 0.5)' }, horzLines: { color: 'rgba(36, 52, 72, 0.5)' } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#243448', scaleMargins: { top: 0.1, bottom: 0.25 } },
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#243448' },
-      width: container.clientWidth,
-      height: container.clientHeight || 380,
     });
 
     this._tvCandle = this._tvChart.addCandlestickSeries({
@@ -75,13 +74,6 @@ class DeltaPaperApp {
       priceScaleId: '',
     });
     this._tvVol.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-
-    const ro = new ResizeObserver(() => {
-      if (this._tvChart && container.clientWidth > 0) {
-        this._tvChart.applyOptions({ width: container.clientWidth, height: container.clientHeight || 380 });
-      }
-    });
-    ro.observe(container);
 
     this._loadInitialCandles();
   }
@@ -384,9 +376,10 @@ class DeltaPaperApp {
       }
     });
 
-    window.addEventListener('resize', () => {
-      if (this.$('acctOverlay') && this.$('acctOverlay').classList.contains('show')) this.drawEquityCurve();
-    });
+    const eqBody = document.querySelector('.eq-body');
+    if (eqBody) {
+      new ResizeObserver(() => this.drawEquityCurve()).observe(eqBody);
+    }
   }
 
   switchSymbol(sym) {
