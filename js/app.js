@@ -22,6 +22,12 @@ class DeltaPaperApp {
     this.cvtDir = 'i2u';
     this.hisLen = -1;
 
+    this._tvChart = null;
+    this._tvCandle = null;
+    this._tvVol = null;
+    this._tvPriceLines = [];
+    this._prevPrice = {};
+
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
     this.switchSymbol = this.switchSymbol.bind(this);
@@ -39,9 +45,154 @@ class DeltaPaperApp {
     this.curLots = this.getLots(this.selSym);
     if (this.state.get().equityCurve.length === 0) this.sampleEq();
 
+    this._initChart();
     this.renderAll();
     this.startSimulationLoop();
     DELTA_LOGGER.log('[App] Initialized successfully');
+  }
+
+  _initChart() {
+    const container = this.$('tv-chart-container');
+    if (!container || typeof LightweightCharts === 'undefined') return;
+
+    this._tvChart = LightweightCharts.createChart(container, {
+      layout: { background: { color: '#111827' }, textColor: '#94a3b8', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
+      grid: { vertLines: { color: 'rgba(36, 52, 72, 0.5)' }, horzLines: { color: 'rgba(36, 52, 72, 0.5)' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: '#243448', scaleMargins: { top: 0.1, bottom: 0.25 } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#243448' },
+      width: container.clientWidth,
+      height: container.clientHeight || 380,
+    });
+
+    this._tvCandle = this._tvChart.addCandlestickSeries({
+      upColor: '#10b981', downColor: '#ef4444', borderVisible: false,
+      wickUpColor: '#10b981', wickDownColor: '#ef4444',
+    });
+
+    this._tvVol = this._tvChart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+    this._tvVol.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+
+    const ro = new ResizeObserver(() => {
+      if (this._tvChart && container.clientWidth > 0) {
+        this._tvChart.applyOptions({ width: container.clientWidth, height: container.clientHeight || 380 });
+      }
+    });
+    ro.observe(container);
+
+    this._loadInitialCandles();
+  }
+
+  _loadInitialCandles() {
+    const m = this.market.getMarket(this.selSym);
+    if (!m || !(m.price > 0)) {
+      setTimeout(() => this._loadInitialCandles(), 1000);
+      return;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const interval = 60;
+    const count = 120;
+    const candles = [];
+    const volumes = [];
+    let p = m.price * (0.97 + Math.random() * 0.06);
+
+    for (let i = count; i > 0; i--) {
+      const t = now - i * interval;
+      const volatility = p * 0.003;
+      const open = p;
+      const close = open + (Math.random() - 0.48) * volatility;
+      const high = Math.max(open, close) + Math.random() * volatility * 0.5;
+      const low = Math.min(open, close) - Math.random() * volatility * 0.5;
+      const vol = Math.floor(Math.random() * 500 + 100);
+      candles.push({ time: t, open: +open.toFixed(m.dec), high: +high.toFixed(m.dec), low: +low.toFixed(m.dec), close: +close.toFixed(m.dec) });
+      volumes.push({ time: t, value: vol, color: close >= open ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)' });
+      p = close;
+    }
+
+    this._tvCandle.setData(candles);
+    this._tvVol.setData(volumes);
+
+    const last = candles[candles.length - 1];
+    this._tvCandle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: m.price });
+  }
+
+  _updateChart(m) {
+    if (!this._tvCandle || !m || !(m.price > 0)) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const time = now - (now % 60);
+
+    this._tvCandle.update({
+      time,
+      open: m.open24 || m.price,
+      high: Math.max(m.high24 || m.price, m.price),
+      low: Math.min(m.low24 || m.price, m.price),
+      close: m.price,
+    });
+
+    if (this._tvVol) {
+      this._tvVol.update({ time, value: m.vol24 || Math.floor(Math.random() * 200 + 50), color: 'rgba(59,130,246,0.2)' });
+    }
+
+    this._updateTpSlLines(m);
+  }
+
+  _updateTpSlLines(m) {
+    if (!this._tvCandle) return;
+
+    this._tvPriceLines.forEach(line => {
+      try { this._tvCandle.removePriceLine(line); } catch (e) {}
+    });
+    this._tvPriceLines = [];
+
+    const S = this.state.get();
+    const pos = S.positions[this.selSym];
+    if (!pos) return;
+
+    if (pos.tp && pos.tp > 0) {
+      const tpLine = this._tvCandle.createPriceLine({
+        price: pos.tp,
+        color: '#10b981',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'TP',
+      });
+      this._tvPriceLines.push(tpLine);
+    }
+    if (pos.sl && pos.sl > 0) {
+      const slLine = this._tvCandle.createPriceLine({
+        price: pos.sl,
+        color: '#ef4444',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'SL',
+      });
+      this._tvPriceLines.push(slLine);
+    }
+
+    const entryLine = this._tvCandle.createPriceLine({
+      price: pos.entry,
+      color: pos.dir === 1 ? 'rgba(16,185,129,0.5)' : 'rgba(239,68,68,0.5)',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: 'Entry',
+    });
+    this._tvPriceLines.push(entryLine);
+  }
+
+  _clearTpSlLines() {
+    if (!this._tvCandle) return;
+    this._tvPriceLines.forEach(line => {
+      try { this._tvCandle.removePriceLine(line); } catch (e) {}
+    });
+    this._tvPriceLines = [];
   }
 
   setupEventListeners() {
@@ -243,7 +394,9 @@ class DeltaPaperApp {
     this.selSym = sym;
     this.curLots = this.getLots(sym);
     if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = this.curLots;
+    this._clearTpSlLines();
     this.markDirty();
+    this._loadInitialCandles();
   }
 
   adjustLeverage(delta) {
@@ -978,9 +1131,20 @@ class DeltaPaperApp {
     if (!m) return;
 
     this.$('mktTitle').textContent = m.symbol + ' • PERP';
+    if (this.$('chartTitle')) this.$('chartTitle').textContent = m.symbol + ' • 1m';
     this.$('lotLabel').textContent = '1 lot = ' + this.fmtLot(m.lot) + ' ' + this.config.SYM_META[this.selSym].short;
-    this.$('psPrice').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
-    this.$('psPrice').className = 'ps-price mono ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
+
+    const priceEl = this.$('psPrice');
+    const oldPrice = this._prevPrice[this.selSym] || 0;
+    priceEl.textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
+    priceEl.className = 'ps-price mono ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
+
+    if (oldPrice > 0 && m.price > 0 && m.price !== oldPrice) {
+      priceEl.classList.remove('price-flash-up', 'price-flash-down');
+      void priceEl.offsetWidth;
+      priceEl.classList.add(m.price > oldPrice ? 'price-flash-up' : 'price-flash-down');
+    }
+    this._prevPrice[this.selSym] = m.price;
 
     const chg = this.chgOf(m);
     this.$('psChg').textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
@@ -989,6 +1153,8 @@ class DeltaPaperApp {
     this.$('psFund').textContent = m.funding
       ? 'Fund ' + (m.funding >= 0 ? '+' : '') + (m.funding * 100).toFixed(4) + '%'
       : '';
+
+    this._updateChart(m);
 
     this.config.SYMBOLS.forEach(sym => {
       const mkt = this.market.getMarket(sym);
@@ -1063,7 +1229,7 @@ class DeltaPaperApp {
       const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
 
       const card = document.createElement('div');
-      card.className = 'pos-card';
+      card.className = 'pos-card ' + (pos.dir === 1 ? 'long' : 'short');
       card.dataset.sym = k;
 
       // Row 1

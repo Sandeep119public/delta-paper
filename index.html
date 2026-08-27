@@ -15,6 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="manifest" href="manifest.json">
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <div id="toasts"></div>
@@ -61,6 +62,13 @@
         </span>
       </div>
       <div class="market-list" id="symRow"></div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="panel-h">
+        <h3 id="chartTitle">Chart</h3>
+      </div>
+      <div id="tv-chart-container"></div>
     </div>
 
     <div class="panel order-panel">
