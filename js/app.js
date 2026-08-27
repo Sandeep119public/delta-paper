@@ -119,7 +119,7 @@ class DeltaPaperApp {
       }
     });
 
-    const tfBtns = document.querySelectorAll('.tf-row button');
+    const tfBtns = document.querySelectorAll('.tf-row button[data-tf]');
     tfBtns.forEach(b => {
       b.addEventListener('click', () => {
         tfBtns.forEach(x => x.classList.remove('on'));
@@ -139,16 +139,42 @@ class DeltaPaperApp {
         try {
           const json = await (await fetch(url)).json();
           if (json.success && Array.isArray(json.result) && json.result.length) {
-            const older = json.result
-              .map(c => ({ time: c.time, open: +c.open, high: +c.high, low: +c.low, close: +c.close }))
-              .sort((a, b) => a.time - b.time);
+            const older = this._sanitizeCandles(json.result);
             this._historyCache = older.concat(this._historyCache);
             if (this._tvCandle) this._tvCandle.setData(this._historyCache);
+            if (this._tvVol) this._tvVol.setData(this._historyCache.map(c => ({
+              time: c.time, value: c.volume || 0,
+              color: c.close >= c.open ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'
+            })));
           }
         } catch (e) { /* ignore */ }
         this._loadingOlder = false;
       }
     });
+  }
+
+  _sanitizeCandles(list) {
+    const seen = new Set();
+    const out = [];
+    for (const c of list) {
+      let t = Number(c.time);
+      if (!isFinite(t)) continue;
+      if (t > 1e11) t = Math.floor(t / 1000);
+      t = Math.floor(t);
+      const o = +c.open, h = +c.high, l = +c.low, cl = +c.close;
+      if (![o, h, l, cl].every(v => isFinite(v) && v > 0)) continue;
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push({
+        time: t, open: o,
+        high: Math.max(o, h, l, cl),
+        low: Math.min(o, h, l, cl),
+        close: cl,
+        volume: Math.max(0, +c.volume || 0)
+      });
+    }
+    out.sort((a, b) => a.time - b.time);
+    return out;
   }
 
   _loadCandles(sym, tf) {
@@ -157,31 +183,32 @@ class DeltaPaperApp {
     this._tfSec = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }[this._tf] || 60;
     this._curCandle = null;
     this._historyCache = [];
-
     const end = Math.floor(Date.now() / 1000);
     const start = end - this._tfSec * 500;
-
     const url = 'https://api.india.delta.exchange/v2/history/candles'
       + `?resolution=${this._tf}&symbol=${this.selSym}&start=${start}&end=${end}`;
-
     fetch(url)
       .then(r => r.json())
       .then(json => {
         if (!json.success || !Array.isArray(json.result) || !json.result.length) return;
-        const data = json.result
-          .map(c => ({ time: c.time, open: +c.open, high: +c.high, low: +c.low, close: +c.close }))
-          .sort((a, b) => a.time - b.time);
+        const data = this._sanitizeCandles(json.result);
+        if (!data.length) return;
         this._historyCache = data;
         if (this._tvCandle) this._tvCandle.setData(data);
+        if (this._tvVol) {
+          this._tvVol.setData(data.map(c => ({
+            time: c.time, value: c.volume || 0,
+            color: c.close >= c.open ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'
+          })));
+        }
         this._curCandle = { ...data[data.length - 1] };
         if (this._tvChart) this._tvChart.timeScale().scrollToRealTime();
-        // Pre-fill VWAP with historical data
         if (this.vwap) this.vwap.setData(data);
       })
       .catch(e => {
         DELTA_LOGGER.log('[Chart] candle load failed', e);
         setTimeout(() => this._loadCandles(this.selSym, this._tf), 5000);
-    });
+      });
   }
 
   _initVisualization() {
@@ -241,28 +268,32 @@ class DeltaPaperApp {
   _feedTick(price) {
     if (!this._tvCandle || !(price > 0)) return;
     const bucket = Math.floor(Date.now() / 1000 / this._tfSec) * this._tfSec;
-    const c = this._curCandle;
-
+    let c = this._curCandle;
     if (!c || c.time !== bucket) {
-      this._curCandle = { time: bucket, open: price, high: price, low: price, close: price };
-    } else {
-      c.high = Math.max(c.high, price);
-      c.low = Math.min(c.low, price);
-      c.close = price;
+      c = this._curCandle = { time: bucket, open: price, high: price, low: price, close: price, volume: 0 };
     }
-    this._tvCandle.update(this._curCandle);
+    c.high = Math.max(c.high, price);
+    c.low = Math.min(c.low, price);
+    c.close = price;
+    c.volume = (c.volume || 0) + 1;
 
-    if (this._tvVol) {
-      const vol = c._vol = (c._vol || 0) + 1;
-      this._tvVol.update({ time: bucket, value: vol, color: 'rgba(59,130,246,0.2)' });
+    try {
+      this._tvCandle.update(c);
+      if (this._tvVol) {
+        this._tvVol.update({
+          time: bucket, value: c.volume,
+          color: c.close >= c.open ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'
+        });
+      }
+    } catch (e) {
+      if (this._historyCache.length) {
+        const last = this._historyCache[this._historyCache.length - 1];
+        if (last.time === bucket) this._historyCache[this._historyCache.length - 1] = { ...last, ...c };
+        else if (bucket > last.time) this._historyCache.push({ ...c });
+        this._tvCandle.setData(this._historyCache);
+      }
     }
-
-    // Feed VWAP (tick volume = 1 per price update)
-    if (this.vwap) {
-      this.vwap.update(price, 1, Math.floor(Date.now() / 1000));
-    }
-
-    this._updateTpSlLines(this.market.getMarket(this.selSym));
+    if (this.vwap) this.vwap.update(price, 1, Math.floor(Date.now() / 1000));
   }
 
   _updateTpSlLines(m) {
@@ -1235,25 +1266,21 @@ class DeltaPaperApp {
     this.renderQty();
     this.renderEntry();
     this.renderPositions();
+    this.renderFunds(); // sidebar wallets must update even when modal is closed
 
     if (this.posDetailSym && this.$('posOverlay') && this.$('posOverlay').classList.contains('show')) {
       this.renderPosDetailLive();
     }
-    if (this.$('hisOverlay') && this.$('hisOverlay').classList.contains('show')) {
-      this.renderHistory();
-    }
-    if (this.$('fundsOverlay') && this.$('fundsOverlay').classList.contains('show')) {
-      this.renderFunds();
-    }
-    if (this.$('menuOverlay') && this.$('menuOverlay').classList.contains('show')) {
-      this.renderMenu();
-    }
-    if (this.$('eqCanvas') && this.$('eqCanvas').closest('.show')) {
+    if (this.$('hisOverlay') && this.$('hisOverlay').classList.contains('show')) this.renderHistory();
+    if (this.$('fundsOverlay') && this.$('fundsOverlay').classList.contains('show')) this.renderFunds();
+    if (this.$('menuOverlay') && this.$('menuOverlay').classList.contains('show')) this.renderMenu();
+
+    const now = Date.now();
+    if (!this._lastEqDraw || now - this._lastEqDraw > 1000) {
+      this._lastEqDraw = now;
       this.drawEquityCurve();
     }
-    if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) {
-      this.renderCvtPreview();
-    }
+    if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) this.renderCvtPreview();
   }
 
   /** NEW: drive the header chip ("SYNC…"/"LIVE"/"REST"/"SIM") and the
@@ -1319,7 +1346,7 @@ class DeltaPaperApp {
     if (!m) return;
 
     this.$('mktTitle').textContent = m.symbol + ' • PERP';
-    if (this.$('chartTitle')) this.$('chartTitle').textContent = m.symbol + ' • 1m';
+    if (this.$('chartTitle')) this.$('chartTitle').textContent = m.symbol + ' • ' + (this._tf || '1m');
     this.$('lotLabel').textContent = '1 lot = ' + this.fmtLot(m.lot) + ' ' + this.config.SYM_META[this.selSym].short;
 
     const priceEl = this.$('psPrice');

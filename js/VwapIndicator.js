@@ -87,38 +87,33 @@ class VwapIndicator {
    * @param {number} timestamp - Unix seconds
    */
   update(price, volume, timestamp) {
-    if (!this.enabled || !(price > 0)) return;
+    if (!this.enabled || !(price > 0) || !isFinite(price)) return;
+    if (!(volume > 0) || !isFinite(volume)) return;
 
     const utcDate = new Date(timestamp * 1000).getUTCDate();
-
-    // Reset at UTC midnight
-    if (this._lastUTCDate !== null && utcDate !== this._lastUTCDate) {
-      this._resetAccumulators();
-    }
+    if (this._lastUTCDate !== null && utcDate !== this._lastUTCDate) this._resetAccumulators();
     this._lastUTCDate = utcDate;
 
-    // Accumulate
     const pv = price * volume;
     this.cumPV += pv;
     this.cumVol += volume;
 
-    // Welford's online variance for bands
     const delta = price - this.vwap;
     this.vwap = this.cumPV / this.cumVol;
     const delta2 = price - this.vwap;
     this.varianceSum += delta * delta2;
 
-    // Update VWAP line
     const time = Math.floor(timestamp);
     this.vwapSeries.update({ time, value: this.vwap });
 
-    // Update bands
     if (this.showBands && this.cumVol > 1) {
-      const stdDev = Math.sqrt(this.varianceSum / this.cumVol);
-      this.upper1.update({ time, value: this.vwap + stdDev });
-      this.lower1.update({ time, value: this.vwap - stdDev });
-      this.upper2.update({ time, value: this.vwap + 2 * stdDev });
-      this.lower2.update({ time, value: this.vwap - 2 * stdDev });
+      const stdDev = Math.sqrt(Math.max(0, this.varianceSum) / this.cumVol);
+      if (isFinite(stdDev)) {
+        this.upper1.update({ time, value: this.vwap + stdDev });
+        this.lower1.update({ time, value: this.vwap - stdDev });
+        this.upper2.update({ time, value: this.vwap + 2 * stdDev });
+        this.lower2.update({ time, value: this.vwap - 2 * stdDev });
+      }
     }
   }
 
@@ -128,13 +123,23 @@ class VwapIndicator {
    * @param {Array} candles - [{ time, open, high, low, close, volume }]
    */
   setData(candles) {
-    this._resetAccumulators();
-    this._history = [];
-
+    this.clear();
     candles.forEach(c => {
-      const vol = c.volume || 1;
-      this.update(c.close, vol, c.time);
+      if (!(c.close > 0) || !(c.volume > 0)) return;
+      this.update(c.close, c.volume, c.time);
     });
+  }
+
+  clear() {
+    this._resetAccumulators();
+    this._lastUTCDate = null;
+    try {
+      this.vwapSeries.setData([]);
+      if (this.showBands) {
+        this.upper1.setData([]); this.lower1.setData([]);
+        this.upper2.setData([]); this.lower2.setData([]);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   /** Show or hide all VWAP series. */
