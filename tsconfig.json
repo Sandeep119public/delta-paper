@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    // Environment Settings
+    "module": "ESNext",
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    
+    // Output
+    "outDir": "./dist",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    
+    // Strict Typechecking - Critical for Financial Apps
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    
+    // Module Resolution
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    
+    // Allow JS files temporarily during migration
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["js/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

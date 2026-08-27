@@ -1,32 +1,32 @@
-```gitignore
-# Compiled and build artifacts
-*.pyc
-__pycache__/
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
+```
 # Dependencies
 node_modules/
-venv/
-.venv/
+
+# Build outputs
+dist/
+build/
+target/
+
+# TypeScript
+*.tsbuildinfo
+*.js.map
+*.mjs.map
+*.cjs.map
+
+# Logs
+*.log
+
+# Environment
 .env
 .env.local
-.env.*
+*.env.*
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-*.swo
-
-# Editors
+# Editor
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
 # OS
 .DS_Store
@@ -37,30 +37,122 @@ coverage/
 htmlcov/
 .coverage
 
-# Distribution / packaging
-dist/
-build/
-*.tar.gz
-*.whl
-*.egg
-*.egg-info/
-
-# Testing
+# Python (if present)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage*
+.nox/
 .pytest_cache/
 .mypy_cache/
 .hypothesis/
 
-# Java/Maven/Gradle
+# Java (if present)
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
 target/
 .gradle/
+build/
 
-# Python virtual environments
-pip-log.txt
-pip-delete-this-directory.txt
+# Node.js (if present)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules/
+.cache/
+.nyc_output
+coverage/
+lib-cov
 
-# Jupyter
-.ipynb_checkpoints/
+# Go (if present)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.prof
+vendor/
 
-# Original rules preserved
-*.log
+# C/C++ (if present)
+*.o
+*.a
+*.so
+*.obj
+*.out
+*.exe
+*.dll
+*.dylib
+*.plist
+*.dmg
+*.iso
+*.img
+*.toast
+*.vcd
+
+# Rust (if present)
+target/
+Cargo.lock
+
+# Ruby (if present)
+*.gem
+*.rbc
+.bundle/
+.config/yardoc
+.yardoc/
+Gemfile.lock
+pkg/
+
+# PHP (if present)
+*.phar
+vendor/
+
+# .NET (if present)
+*.sln
+*.csproj.user
+*.userosscache
+*.suo
+*.user
+*.aps
+*.pch
+*.vspscc
+*.vssscc
+.builds
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Tt]emp/
+[Tt]ests/[Bb]in/
+[Tt]ests/[Oo]bj/
+[Tt]estresult.xml
+[Tt]estresults.xml
+*.VC.db
+*.VC.VC.opendb
+[Dd]eploy/[Ll]ocal/
+[Dd]eploy/[Tt]est/
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+[Aa]pp_[Ss]tartup_[Bb]in/
+[Ii]ntellisense/
+[Pp]ackages/
+_UpgradeReport_Files/
+_UpgradeReport.htm
+*.VC.VC.opendb
+*.VC.db
+*.VC.VC.opendb-shm
+*.VC.VC.opendb-wal
+*.VC.db-shm
+*.VC.db-wal
 ```
