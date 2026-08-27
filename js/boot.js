@@ -3,7 +3,7 @@
  * Initializes all modules and starts the application
  */
 
-(function() {
+(async function() {
   'use strict';
 
   DELTA_LOGGER.log('[Boot] Starting Delta Paper Trading...');
@@ -18,9 +18,12 @@
   const apiService = new DeltaApiService(config);
   const wsService = new WebSocketService(config);
   
-  // Create state manager
-  const stateManager = new AppState(config);
-  stateManager.load();
+  // Initialize IndexedDB before state so it's available for load
+  await storage.init().catch(e => DELTA_LOGGER.warn('[Boot] IndexedDB init failed, using localStorage fallback'));
+  
+  // Create state manager (uses IndexedDB + localStorage)
+  const stateManager = new AppState(config, storage);
+  await stateManager.load();
   
   // Create market data service (coordinator)
   const marketService = new MarketDataService(config, apiService, wsService);
@@ -65,11 +68,6 @@
   marketService.init()
     .then(() => DELTA_LOGGER.log('[Boot] Market data initialized'))
     .catch(e => DELTA_LOGGER.error('[Boot] market init failed', e));
-  
-  // Initialize IndexedDB
-  storage.init()
-    .then(() => DELTA_LOGGER.log('[Boot] IndexedDB initialized'))
-    .catch(e => DELTA_LOGGER.warn('[Boot] IndexedDB init failed, using localStorage fallback'));
   
   // Register service worker for PWA
   if ('serviceWorker' in navigator) {

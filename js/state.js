@@ -4,10 +4,11 @@
  */
 
 class AppState {
-  constructor(config) {
+  constructor(config, storage) {
     this.config = config;
     this.state = null;
     this.listeners = new Set();
+    this.storage = storage || null;
   }
 
   /**
@@ -38,14 +39,34 @@ class AppState {
   }
 
   /**
-   * Load state from localStorage or create default
+   * Load state from IndexedDB (primary) or localStorage (fallback)
    */
-  load() {
+  async load() {
     try {
-      const stored = localStorage.getItem(this.config.STORE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Validate and merge with defaults
+      let parsed = null;
+
+      // Try IndexedDB first
+      if (this.storage && this.storage.db) {
+        try {
+          parsed = await this.storage.get('settings', this.config.STORE_KEY);
+        } catch (e) {
+          DELTA_LOGGER.warn('[State] IndexedDB read failed, falling back:', e);
+        }
+      }
+
+      // Fall back to localStorage
+      if (!parsed) {
+        const stored = localStorage.getItem(this.config.STORE_KEY);
+        if (stored) {
+          parsed = JSON.parse(stored);
+          // Migrate to IndexedDB in background
+          if (this.storage && this.storage.db) {
+            this.storage.put('settings', { key: this.config.STORE_KEY, ...parsed }).catch(() => {});
+          }
+        }
+      }
+
+      if (parsed) {
         this.state = { ...this.createDefault(), ...parsed };
         this.migrateState();
         DELTA_LOGGER.log('[State] Loaded from storage');
@@ -64,13 +85,19 @@ class AppState {
   }
 
   /**
-   * Save state to localStorage
+   * Save state to localStorage (sync) and IndexedDB (async background)
    */
   save() {
     try {
       if (!this.state) return;
       this.state.lastSeen = Date.now();
-      localStorage.setItem(this.config.STORE_KEY, JSON.stringify(this.state));
+      const serialized = JSON.parse(JSON.stringify(this.state));
+      localStorage.setItem(this.config.STORE_KEY, JSON.stringify(serialized));
+      if (this.storage && this.storage.db) {
+        this.storage.put('settings', { key: this.config.STORE_KEY, ...serialized }).catch(e => {
+          DELTA_LOGGER.warn('[State] IndexedDB save failed:', e);
+        });
+      }
     } catch (e) {
       DELTA_LOGGER.error('[State] Save failed:', e);
       throw new Error('Failed to save state. Storage may be full.');
@@ -211,7 +238,3 @@ class AppState {
   }
 }
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { AppState };
-}

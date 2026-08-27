@@ -558,6 +558,3 @@ class MarketDataManager {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = MarketDataManager;
-}

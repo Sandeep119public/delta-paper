@@ -295,7 +295,3 @@ class BacktestEngine {
   }
 }
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = BacktestEngine;
-}

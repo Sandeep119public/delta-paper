@@ -325,7 +325,3 @@ class IndexedDBStorage {
 // Singleton instance
 const storage = new IndexedDBStorage();
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { IndexedDBStorage, storage };
-}

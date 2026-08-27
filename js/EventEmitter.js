@@ -213,7 +213,3 @@ const EVENTS = {
   CIRCUIT_BREAKER: 'circuit:breaker'
 };
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { EventEmitter, eventBus, EVENTS };
-}

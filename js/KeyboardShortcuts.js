@@ -230,7 +230,3 @@ class KeyboardShortcuts {
   }
 }
 
-// Export for module systems
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = KeyboardShortcuts;
-}

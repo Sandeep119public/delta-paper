@@ -76,7 +76,3 @@ const DELTA_CONFIG = {
   }
 };
 
-// Export for module systems (if available)
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = DELTA_CONFIG;
-}

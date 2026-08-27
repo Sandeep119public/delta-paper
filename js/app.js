@@ -32,6 +32,7 @@ class DeltaPaperApp {
     this._curCandle = null;
     this._historyCache = [];
     this._loadingOlder = false;
+    this._isRendering = false;
 
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
@@ -1078,7 +1079,14 @@ class DeltaPaperApp {
   openModal(id)  { if (this.$(id)) this.$(id).classList.add('show'); }
   closeModal(id) { if (this.$(id)) this.$(id).classList.remove('show'); if (id === 'posOverlay') this.posDetailSym = null; }
 
-  markDirty() { requestAnimationFrame(() => this.renderAll()); }
+  markDirty() {
+    if (this._isRendering) return;
+    this._isRendering = true;
+    requestAnimationFrame(() => {
+      this._isRendering = false;
+      this.renderAll();
+    });
+  }
   flushSave(force) { this.state.save(); }
 
   startSimulationLoop() {
@@ -1531,6 +1539,3 @@ class DeltaPaperApp {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = DeltaPaperApp;
-}
