@@ -38,7 +38,6 @@ class DeltaPaperApp {
 
     // Visualization modules (initialized in _initChart)
     this.vwap = null;
-    this.depthChart = null;
     this.heatmap = null;
 
     this.init = this.init.bind(this);
@@ -75,7 +74,18 @@ class DeltaPaperApp {
       grid: { vertLines: { color: 'rgba(36, 52, 72, 0.5)' }, horzLines: { color: 'rgba(36, 52, 72, 0.5)' } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#243448', scaleMargins: { top: 0.1, bottom: 0.25 } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#243448' },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#243448',
+        rightOffset: 6,
+        minBarSpacing: 6,
+        allowBoldLabels: false,
+        tickMarkFormatter: (t) => {
+          const d = new Date(t * 1000);
+          return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+        },
+      },
     });
 
     const opts = {
@@ -98,25 +108,9 @@ class DeltaPaperApp {
 
     this._loadCandles();
 
-    // Throttled depth chart update (max once per 200ms)
-    let lastDepthUpdate = 0;
     this.market.subscribe(() => {
       const m = this.market.getMarket(this.selSym);
       if (m && m.price > 0) this._feedTick(m.price);
-
-      // Update depth chart (throttled)
-      if (this.depthChart && m && m.price > 0) {
-        const now = performance.now();
-        if (now - lastDepthUpdate > 200) {
-          lastDepthUpdate = now;
-          const sim = window.simulationEngine || null;
-          if (sim && this.config.VIS && this.config.VIS.USE_SIMULATED_L2) {
-            this.depthChart.updateFromMarket(m, sim);
-            const midEl = this.$('depthMid');
-            if (midEl) midEl.textContent = this.fmtPrice(m.price, m.dec);
-          }
-        }
-      }
     });
 
     const tfBtns = document.querySelectorAll('.tf-row button[data-tf]');
@@ -245,24 +239,6 @@ class DeltaPaperApp {
         }
       }
     } catch (e) { DELTA_LOGGER.warn('[App] Heatmap init failed', e); }
-
-    // Depth chart
-    try {
-      const depthCanvas = this.$('depthCanvas');
-      if (depthCanvas) {
-        this.depthChart = new DepthChart(depthCanvas, this.config);
-        // Initial simulated depth
-        const m = this.market.getMarket(this.selSym);
-        if (m) {
-          const sim = window.simulationEngine || null;
-          if (sim && this.config.VIS && this.config.VIS.USE_SIMULATED_L2) {
-            this.depthChart.updateFromMarket(m, sim);
-            const midEl = this.$('depthMid');
-            if (midEl) midEl.textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '—';
-          }
-        }
-      }
-    } catch (e) { DELTA_LOGGER.warn('[App] DepthChart init failed', e); }
   }
 
   _feedTick(price) {
