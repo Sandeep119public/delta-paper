@@ -72,9 +72,12 @@
     }
     liquidate(symbol, price, reason = 'LIQUIDATION') {
       const S = this.state.get(), pos = S.positions?.[symbol]; if (!pos) return null;
-      const liq = this.liquidationPrice(pos), loss = round(-pos.margin), trade = { id: 'TRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), positionId: pos.positionId || null, t: Date.now(), symbol, side: pos.dir === 1 ? 'LONG' : 'SHORT', qty: round(pos.qty), entryPrice: round(pos.entry), exitPrice: liq, grossPnl: loss, fee: 0, pnl: loss, reason };
-      const positions = { ...(S.positions || {}) }; delete positions[symbol]; const history = [{ t: trade.t, id: trade.id, sym: symbol, label: '⚡ Liquidated', qty: trade.qty, price: liq, pnl: loss }, ...(S.history || [])].slice(0,100);
-      this.state.update({ positions, realized: round((S.realized || 0) + loss), grossLoss: round((S.grossLoss || 0) + Math.abs(loss)), losses: (S.losses || 0) + 1, worst: Math.min(S.worst || 0, loss), tradeCount: (S.tradeCount || 0) + 1, history, tradeArchive: [...(S.tradeArchive || []), trade] });
+      const exit = positive(price) ? round(price) : this.liquidationPrice(pos);
+      const gross = this.pnl(pos, exit), released = round(pos.margin), usd = round((S.usd || 0) + released + gross);
+      const trade = { id: 'TRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), positionId: pos.positionId || null, t: Date.now(), symbol, side: pos.dir === 1 ? 'LONG' : 'SHORT', qty: round(pos.qty), entryPrice: round(pos.entry), exitPrice: exit, grossPnl: gross, fee: 0, pnl: gross, reason };
+      const positions = { ...(S.positions || {}) }; delete positions[symbol];
+      const history = [{ t: trade.t, id: trade.id, sym: symbol, label: '⚡ Liquidated', qty: trade.qty, price: exit, pnl: gross }, ...(S.history || [])].slice(0,100);
+      this.state.update({ usd, positions, realized: round((S.realized || 0) + gross), grossLoss: round((S.grossLoss || 0) + Math.max(0, -gross)), losses: (S.losses || 0) + 1, worst: Math.min(S.worst || 0, gross), tradeCount: (S.tradeCount || 0) + 1, history, tradeArchive: [...(S.tradeArchive || []), trade] });
       return trade;
     }
   }
