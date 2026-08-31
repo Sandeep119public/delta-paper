@@ -91,7 +91,7 @@ class OrderEngine {
       const canFillImmediately = (side === 1 && m.price <= price) || 
                                   (side === -1 && m.price >= price);
       if (canFillImmediately) {
-        return this.placeMarketOrder({ symbol, side, lots, leverage });
+        const order = { id: this.generateOrderId(), symbol, type: 'LIMIT', side, lots, leverage, price, status: 'FILLED', filledAt: Date.now(), filledPrice: side === 1 ? Math.min(m.price, price) : Math.max(m.price, price) };\n        this.events.emit(EVENTS.ORDER_FILLED, order);\n        return { success: true, order };
       }
     }
 
