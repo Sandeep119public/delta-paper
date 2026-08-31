@@ -1,4 +1,4 @@
-/* Authoritative accounting engine for paper trading. */
+/* Authoritative paper-accounting engine. All balance, margin and P&L changes flow through here. */
 (function (global) {
   'use strict';
   const EPS = 1e-10;
@@ -8,93 +8,74 @@
     return Math.round((n + Number.EPSILON) * p) / p;
   };
   const positive = n => Number.isFinite(n) && n > 0;
+  const sideOk = s => s === 1 || s === -1;
 
   class FinancialEngine {
     constructor(config, state, market) { this.config = config; this.state = state; this.market = market; }
-    lotSize(symbol) {
-      const size = this.config.LOT_SIZES && this.config.LOT_SIZES[symbol];
-      if (!positive(size)) throw new Error('Unknown contract size for ' + symbol);
-      return size;
-    }
-    fee(notional) { return round(Math.abs(notional) * (this.config.TAKER_FEE || 0)); }
+    lotSize(symbol) { const v = Number(this.config.LOT_SIZES?.[symbol]); if (!positive(v)) throw Error('Unknown contract size for ' + symbol); return v; }
+    fee(notional) { return round(Math.abs(notional) * Number(this.config.TAKER_FEE || 0)); }
     notional(price, qty) { return round(price * qty); }
     pnl(pos, price, qty = pos.qty) { return round((price - pos.entry) * qty * pos.dir); }
     liquidationPrice(pos) {
       const mm = Number.isFinite(this.config.MAINTENANCE_MARGIN) ? this.config.MAINTENANCE_MARGIN : 0.005;
       return round(pos.dir === 1 ? pos.entry * (1 - 1 / pos.lev + mm) : pos.entry * (1 + 1 / pos.lev - mm));
     }
-    open(symbol, side, price, qty, lev, feeAmount, lots) {
-      const S = this.state.get();
-      const margin = round(this.notional(price, qty) / lev);
-      const fee = round(feeAmount || this.fee(this.notional(price, qty)));
-      const required = round(margin + fee);
-      if (S.usd + EPS < required) throw new Error('Insufficient USD margin');
-      const positions = { ...S.positions };
-      const old = positions[symbol];
-      if (!old) positions[symbol] = { sym: symbol, dir: side, lots: Math.max(1, Math.round(lots || qty / this.lotSize(symbol))), qty: round(qty), entry: round(price), margin, lev, tp: 0, sl: 0, openedAt: Date.now() };
-      else {
-        const totalQty = old.qty + qty;
-        positions[symbol] = { ...old, qty: round(totalQty), lots: Math.max(1, Math.round(totalQty / this.lotSize(symbol))), entry: round((old.qty * old.entry + qty * price) / totalQty), margin: round(old.margin + margin), lev };
+    _validate(symbol, side, price, qty, lev) {
+      if (!this.config.SYMBOLS.includes(symbol)) throw Error('Invalid symbol');
+      if (!sideOk(side)) throw Error('Invalid side');
+      if (!positive(price) || !positive(qty)) throw Error('Invalid price or quantity');
+      if (!Number.isFinite(lev) || lev < 1 || lev > this.config.MAX_LEVERAGE) throw Error('Invalid leverage');
+    }
+    accountSnapshot(rate) {
+      const S = this.state.get(); let unrealized = 0, locked = 0;
+      for (const [symbol, p] of Object.entries(S.positions || {})) {
+        locked += Number(p.margin) || 0;
+        const m = this.market?.getMarket(symbol);
+        if (m && positive(m.price)) unrealized += this.pnl(p, m.price);
       }
-      this.state.update({ usd: round(S.usd - required), feesTotal: round((S.feesTotal || 0) + fee), positions });
+      locked = round(locked); unrealized = round(unrealized);
+      const availableUsd = round(S.usd || 0), equityUsd = round(availableUsd + locked + unrealized);
+      const fx = Number(rate || S.rate || this.config.BASE_RATE);
+      return { inr: round(S.inr || 0), availableUsd, lockedMarginUsd: locked, unrealizedPnlUsd: unrealized, equityUsd, withdrawableUsd: availableUsd, withdrawableInr: round(S.inr || 0), totalInr: round((S.inr || 0) + equityUsd * fx), rate: fx };
+    }
+    equity(rate) { const a = this.accountSnapshot(rate); return { usd: a.availableUsd, unrealized: a.unrealizedPnlUsd, lockedMargin: a.lockedMarginUsd, totalUsd: a.equityUsd, inr: a.totalInr }; }
+    open(symbol, side, price, qty, lev, feeAmount, lots) {
+      this._validate(symbol, side, price, qty, lev);
+      const S = this.state.get(), n = this.notional(price, qty), margin = round(n / lev), fee = round(feeAmount ?? this.fee(n)), required = round(margin + fee);
+      if (fee < 0 || (S.usd || 0) + EPS < required) throw Error('Insufficient USD margin');
+      const positions = { ...(S.positions || {}) }, old = positions[symbol], lotCount = Math.max(1, Math.round(lots || qty / this.lotSize(symbol)));
+      if (!old) positions[symbol] = { sym: symbol, dir: side, lots: lotCount, qty: round(qty), entry: round(price), margin, lev, tp: 0, sl: 0, openedAt: Date.now(), positionId: 'POS-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) };
+      else {
+        if (old.dir !== side) throw Error('Cannot add to opposite position through open()');
+        const totalQty = round(old.qty + qty), entry = round((old.qty * old.entry + qty * price) / totalQty), totalMargin = round(old.margin + margin);
+        positions[symbol] = { ...old, qty: totalQty, lots: Math.max(1, Math.round(totalQty / this.lotSize(symbol))), entry, margin: totalMargin, lev: round((entry * totalQty) / totalMargin, 8) };
+      }
+      this.state.update({ usd: round((S.usd || 0) - required), feesTotal: round((S.feesTotal || 0) + fee), positions });
       return { margin, fee, required };
     }
     fill(symbol, side, price, qty, lev, feeAmount, lots, reason = 'MARKET') {
-      if (!positive(price) || !positive(qty) || !Number.isFinite(lev) || lev < 1) throw new Error('Invalid fill parameters');
-      const S = this.state.get();
-      const pos = S.positions[symbol];
-      const orderFee = round(feeAmount || this.fee(this.notional(price, qty)));
+      this._validate(symbol, side, price, qty, lev);
+      const S = this.state.get(), pos = S.positions?.[symbol], orderFee = round(feeAmount ?? this.fee(this.notional(price, qty)));
       if (!pos || pos.dir === side) return this.open(symbol, side, price, qty, lev, orderFee, lots);
-
-      const closeQty = Math.min(qty, pos.qty);
-      const flipQty = Math.max(0, qty - closeQty);
-      const closeFee = round(orderFee * (closeQty / qty));
-      const flipFee = round(orderFee - closeFee);
-      const gross = this.pnl(pos, price, closeQty);
-      const released = round(pos.margin * closeQty / pos.qty);
-      const net = round(gross - closeFee);
-      let usd = round(S.usd + released + net);
-      let positions = { ...S.positions };
-      if (pos.qty - closeQty <= EPS) delete positions[symbol];
+      const closeQty = Math.min(qty, pos.qty), flipQty = round(Math.max(0, qty - closeQty)), closeFee = round(orderFee * (closeQty / qty)), flipFee = round(orderFee - closeFee), gross = this.pnl(pos, price, closeQty), released = round(pos.margin * closeQty / pos.qty), net = round(gross - closeFee);
+      let usd = round((S.usd || 0) + released + net);
+      if (flipQty > EPS) { const flipMargin = round(this.notional(price, flipQty) / lev); if (usd + EPS < round(flipMargin + flipFee)) throw Error('Insufficient USD margin for reversal'); }
+      const positions = { ...(S.positions || {}) };
+      if (round(pos.qty - closeQty) <= EPS) delete positions[symbol];
       else positions[symbol] = { ...pos, qty: round(pos.qty - closeQty), lots: Math.max(1, Math.round((pos.qty - closeQty) / this.lotSize(symbol))), margin: round(pos.margin - released) };
-
-      const wins = (S.wins || 0) + (net > EPS ? 1 : 0);
-      const losses = (S.losses || 0) + (net < -EPS ? 1 : 0);
-      const history = [...(S.history || [])];
-      const archive = [...(S.tradeArchive || [])];
+      if (flipQty > EPS) { const flipMargin = round(this.notional(price, flipQty) / lev); positions[symbol] = { sym: symbol, dir: side, lots: Math.max(1, Math.round(flipQty / this.lotSize(symbol))), qty: flipQty, entry: round(price), margin: flipMargin, lev, tp: 0, sl: 0, openedAt: Date.now(), positionId: 'POS-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) }; usd = round(usd - flipMargin - flipFee); }
       const trade = { id: 'TRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), positionId: pos.positionId || null, t: Date.now(), symbol, side: pos.dir === 1 ? 'LONG' : 'SHORT', qty: round(closeQty), entryPrice: round(pos.entry), exitPrice: round(price), grossPnl: gross, fee: closeFee, pnl: net, reason };
-      history.unshift({ t: trade.t, sym: symbol, label: 'Close ' + trade.side, qty: trade.qty, price: trade.exitPrice, pnl: trade.pnl });
-      if (history.length > 100) history.length = 100;
-      archive.push(trade);
-
-      if (flipQty > EPS) {
-        const margin = round(this.notional(price, flipQty) / lev);
-        const required = round(margin + flipFee);
-        if (usd + EPS >= required) {
-          usd = round(usd - required);
-          positions[symbol] = { sym: symbol, dir: side, lots: Math.max(1, Math.round(flipQty / this.lotSize(symbol))), qty: round(flipQty), entry: round(price), margin, lev, tp: 0, sl: 0, openedAt: Date.now() };
-        }
-      }
-      const grossProfit = round((S.grossProfit || 0) + Math.max(0, gross));
-      const grossLoss = round((S.grossLoss || 0) + Math.max(0, -gross));
-      this.state.update({ usd, positions, realized: round((S.realized || 0) + net), wins, losses, best: Math.max(S.best || 0, net), worst: Math.min(S.worst || 0, net), grossProfit, grossLoss, tradeCount: (S.tradeCount || 0) + 1, feesTotal: round((S.feesTotal || 0) + orderFee), history, tradeArchive: archive });
-      return { realizedGross: gross, realizedNet: net, closeQty, flipQty };
+      const history = [{ t: trade.t, id: trade.id, sym: symbol, label: 'Close ' + trade.side, qty: trade.qty, price: trade.exitPrice, pnl: trade.pnl }, ...(S.history || [])].slice(0, 100);
+      const archive = [...(S.tradeArchive || []), trade], wins = (S.wins || 0) + (net > EPS ? 1 : 0), losses = (S.losses || 0) + (net < -EPS ? 1 : 0);
+      this.state.update({ usd, positions, realized: round((S.realized || 0) + net), wins, losses, best: Math.max(S.best || 0, net), worst: Math.min(S.worst || 0, net), grossProfit: round((S.grossProfit || 0) + Math.max(0, gross)), grossLoss: round((S.grossLoss || 0) + Math.max(0, -gross)), tradeCount: (S.tradeCount || 0) + 1, feesTotal: round((S.feesTotal || 0) + orderFee), history, tradeArchive: archive });
+      return { realizedGross: gross, realizedNet: net, closeQty, flipQty, tradeId: trade.id };
     }
     liquidate(symbol, price, reason = 'LIQUIDATION') {
-      const S = this.state.get(), pos = S.positions[symbol];
-      if (!pos) return null;
-      const loss = round(-pos.margin), liq = this.liquidationPrice(pos), positions = { ...S.positions };
-      delete positions[symbol];
-      const trade = { id: 'TRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), positionId: pos.positionId || null, t: Date.now(), symbol, side: pos.dir === 1 ? 'LONG' : 'SHORT', qty: pos.qty, entryPrice: pos.entry, exitPrice: liq, grossPnl: loss, fee: 0, pnl: loss, reason };
-      const history = [...(S.history || [])]; history.unshift({ t: trade.t, sym: symbol, label: '⚡ Liquidated', qty: pos.qty, price: liq, pnl: loss }); if (history.length > 100) history.length = 100;
-      const archive = [...(S.tradeArchive || []), trade];
-      this.state.update({ positions, realized: round((S.realized || 0) + loss), grossLoss: round((S.grossLoss || 0) + Math.abs(loss)), losses: (S.losses || 0) + 1, worst: Math.min(S.worst || 0, loss), tradeCount: (S.tradeCount || 0) + 1, history, tradeArchive: archive });
+      const S = this.state.get(), pos = S.positions?.[symbol]; if (!pos) return null;
+      const liq = this.liquidationPrice(pos), loss = round(-pos.margin), trade = { id: 'TRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), positionId: pos.positionId || null, t: Date.now(), symbol, side: pos.dir === 1 ? 'LONG' : 'SHORT', qty: round(pos.qty), entryPrice: round(pos.entry), exitPrice: liq, grossPnl: loss, fee: 0, pnl: loss, reason };
+      const positions = { ...(S.positions || {}) }; delete positions[symbol]; const history = [{ t: trade.t, id: trade.id, sym: symbol, label: '⚡ Liquidated', qty: trade.qty, price: liq, pnl: loss }, ...(S.history || [])].slice(0,100);
+      this.state.update({ positions, realized: round((S.realized || 0) + loss), grossLoss: round((S.grossLoss || 0) + Math.abs(loss)), losses: (S.losses || 0) + 1, worst: Math.min(S.worst || 0, loss), tradeCount: (S.tradeCount || 0) + 1, history, tradeArchive: [...(S.tradeArchive || []), trade] });
       return trade;
-    }
-    equity(rate) {
-      const S = this.state.get(); let unrealized = 0;
-      for (const symbol of Object.keys(S.positions || {})) { const p = S.positions[symbol], m = this.market && this.market.getMarket(symbol); if (m && positive(m.price)) unrealized += this.pnl(p, m.price); }
-      return { usd: round(S.usd), unrealized: round(unrealized), totalUsd: round(S.usd + unrealized), inr: round(S.inr + (S.usd + unrealized) * (rate || this.config.BASE_RATE)) };
     }
   }
   global.FinancialEngine = FinancialEngine;
