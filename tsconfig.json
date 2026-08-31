@@ -2,14 +2,18 @@
   "compilerOptions": {
     "module": "ESNext",
     "target": "ESNext",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["node", "vitest/globals"],
-    
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "outDir": "./dist",
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
-    
     "strict": true,
     "strictNullChecks": true,
     "noImplicitAny": true,
@@ -18,7 +22,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -27,19 +30,32 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    
     "allowJs": true,
     "checkJs": false,
-    
     "rootDir": ".",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["./js/*"],
-      "@services/*": ["./js/services/*"],
-      "@types/*": ["./types/*"]
+      "@/*": [
+        "./js/*"
+      ],
+      "@services/*": [
+        "./js/services/*"
+      ],
+      "@types/*": [
+        "./types/*"
+      ]
     },
-    "typeRoots": ["./types", "./node_modules/@types"]
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ]
   },
-  "include": ["js/**/*", "tests/**/*", "types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "js/**/*",
+    "tests/**/*",
+    "types/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
