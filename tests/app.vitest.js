@@ -3,7 +3,7 @@
  * Run with: npm test (requires Node.js and npm)
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Import modules under test
 // Note: config.js and console.js are loaded via setup.js
@@ -42,8 +42,7 @@ describe('InputValidator', () => {
   let validator;
 
   beforeEach(async () => {
-    const { InputValidator } = await import('../js/validator.js');
-    validator = new InputValidator(DELTA_CONFIG);
+    validator = new globalThis.InputValidator(globalThis.DELTA_CONFIG);
   });
 
   it('should validate lots correctly', () => {
@@ -95,8 +94,7 @@ describe('AppState', () => {
 
   beforeEach(async () => {
     localStorage.clear();
-    const { AppState } = await import('../js/state.js');
-    appState = new AppState(DELTA_CONFIG);
+    appState = new globalThis.AppState(globalThis.DELTA_CONFIG);
   });
 
   it('should create default state', () => {
