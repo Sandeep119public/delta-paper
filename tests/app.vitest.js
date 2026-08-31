@@ -105,11 +105,12 @@ describe('AppState', () => {
     expect(typeof state.uid).toBe('string');
   });
 
-  it('should load and save', () => {
-    const state = appState.load();
+  it('should load and save', async () => {
+    const state = await appState.load();
     expect(state).not.toBeNull();
-    
+
     appState.update({ inr: 900000 });
+    appState.flushSave();
     const saved = JSON.parse(localStorage.getItem(DELTA_CONFIG.STORE_KEY));
     expect(saved.inr).toBe(900000);
   });
