@@ -63,7 +63,8 @@ class AppState {
         if (av !== bv) return av > bv ? a : b;
         return Number(a.updatedAt||a.lastSeen||0) >= Number(b.updatedAt||b.lastSeen||0) ? a : b;
       };
-      const parsed = newer(idbState, localState);
+      const valid=s=>s&&typeof s==='object'&&Number.isFinite(Number(s.inr))&&Number(s.inr)>=0&&typeof s.positions==='object'&&typeof s.lots==='object';
+      const parsed = newer(valid(idbState)?idbState:null, valid(localState)?localState:null);
       this.state = parsed ? { ...this.createDefault(), ...parsed } : this.createDefault();
       this.migrateState();
       this._dirty = true;
@@ -174,6 +175,7 @@ class AppState {
   validateUpdates(updates) {
     const validated = {};
     const v = this.config.VALIDATION;
+    if (!updates || typeof updates !== 'object') throw new Error('updates must be an object');
 
     for (const [key, value] of Object.entries(updates)) {
       switch (key) {
