@@ -1,0 +1,4 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs'; import vm from 'node:vm';
+function Service(){const ctx=vm.createContext({window:{},Date,Math,Number,Error,fetch:()=>{throw Error('network should not run')}});vm.runInContext(fs.readFileSync(new URL('../js/services/ChartDataService.js',import.meta.url),'utf8'),ctx);return ctx.window.ChartDataService;}
+describe('ChartDataService coverage',()=>{it('detects internal candle gaps',()=>{const S=Service(),store={},s=new S({},store);const rows=[{openTime:0},{openTime:60000},{openTime:180000},{openTime:240000}];expect(s.coverageGaps(rows,0,240000)).toEqual([[120000,120000]]);});it('returns no gaps for continuous data',()=>{const S=Service(),s=new S({},{});const rows=[0,60000,120000].map(openTime=>({openTime}));expect(s.coverageGaps(rows,0,120000)).toEqual([]);});});
