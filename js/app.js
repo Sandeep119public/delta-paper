@@ -36,6 +36,8 @@ class DeltaPaperApp {
     this._posCards = {};
     this._posKeyStr = '';
 
+    this._chartRequest = 0;
+
     // Visualization modules (initialized in _initChart)
     this.vwap = null;
     this.heatmap = null;
@@ -47,6 +49,75 @@ class DeltaPaperApp {
     this.executeTrade = this.executeTrade.bind(this);
     this.closePosition = this.closePosition.bind(this);
     this.handleMenuAction = this.handleMenuAction.bind(this);
+  }
+
+  handleMenuAction(action) {
+    switch (action) {
+      case 'funds':
+        this.closeModal('menuOverlay');
+        this.renderFunds();
+        this.openModal('fundsOverlay');
+        break;
+      case 'history':
+        this.closeModal('menuOverlay');
+        this.hisLen = -1;
+        this.renderHistory();
+        this.openModal('hisOverlay');
+        break;
+      case 'account':
+        this.closeModal('menuOverlay');
+        this.renderAcct();
+        this.openModal('acctOverlay');
+        break;
+    }
+  }
+
+  lotOf(sym) {
+    const m = this.market.getMarket(sym);
+    return m ? m.lot : (this.config.LOT_SIZES[sym] || 0.001);
+  }
+
+  defaultLots(sym) {
+    const m = this.market.getMarket(sym);
+    if (m && m.price > 0) {
+      return Math.max(1, Math.round(100 / (this.lotOf(sym) * m.price)));
+    }
+    return 1;
+  }
+
+  getLots(sym) {
+    const S = this.state.get();
+    if (S.lots[sym] && S.lots[sym] >= 1) return Math.round(S.lots[sym]);
+    return this.defaultLots(sym);
+  }
+
+  setLots(l) {
+    l = Math.max(1, Math.round(l));
+    this.curLots = l;
+    const S = this.state.get();
+    const lots = { ...S.lots, [this.selSym]: l };
+    this.state.update({ lots });
+    if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = l;
+    this.markDirty();
+  }
+
+  stepLots(d) { this.setLots(this.curLots + d); }
+
+  setMaxLots() {
+    const m = this.market.getMarket(this.selSym);
+    if (!m || !(m.price > 0)) return;
+
+    const S = this.state.get();
+    if (!(S.usd > 0)) return this.toast('No margin', 'Convert INR to USD first', 'err');
+
+    const lots = Math.floor((S.usd * 0.99 * S.lev) / (this.lotOf(this.selSym) * m.price));
+    this.setLots(Math.max(1, lots));
+  }
+
+  setNotionalLots(usd) {
+    const m = this.market.getMarket(this.selSym);
+    if (!m || !(m.price > 0)) return;
+    this.setLots(Math.max(1, Math.round(usd / (this.lotOf(this.selSym) * m.price))));
   }
 
   async init() {
@@ -448,34 +519,6 @@ class DeltaPaperApp {
     syms.slice().forEach(sym => this.closePosition(sym));
   }
 
-  recordClose(net) {
-    const S = this.state.get();
-    let realized = S.realized, wins = S.wins, losses = S.losses;
-    let best = S.best, worst = S.worst;
-    realized += net;
-    if (net > 0) wins++;
-    else if (net < 0) losses++;
-    best = Math.max(best, net);
-    worst = Math.min(worst, net);
-    this.state.update({ realized, wins, losses, best, worst });
-  }
-
-  pushHist(sym, label, qty, price, pnl) {
-    const S = this.state.get();
-    const history = S.history;
-    history.unshift({ t: Date.now(), sym, label, qty, price, pnl });
-    if (history.length > 100) history.length = 100;
-    this.state.update({ history });
-  }
-
-  checkTPSL() {
-    this._checkTradingTriggers();
-  }
-
-  checkLiquidations() {
-    this._checkTradingTriggers();
-  }
-
   _checkTradingTriggers() {
     if (!this.trading) return;
     const symbols = Object.keys({ ...(this.state.get().positions || {}) });
@@ -487,31 +530,6 @@ class DeltaPaperApp {
       if (result && before && result.reason === 'LIQUIDATION') this.toast('LIQUIDATED', (this.config.SYM_META[symbol]?.short || symbol) + ' position liquidated', 'err');
     }
     this.state.flushSave();
-  }
-
-  liqPrice(pos) {
-    const mm = 0.005;
-    return pos.dir === 1
-      ? pos.entry * (1 - 1 / pos.lev + mm)
-      : pos.entry * (1 + 1 / pos.lev - mm);
-  }
-
-  closeAtTrigger(pos, label, price) {
-    const m = this.market.getMarket(pos.sym);
-    const fee = pos.qty * price * this.config.TAKER_FEE;
-    this.applyFill(pos.sym, -pos.dir, price, pos.qty, pos.lev, fee, pos.lots);
-
-    const S = this.state.get();
-    if (S.history.length) {
-      const history = [...S.history];
-      history[0].label = label;
-      this.state.update({ history });
-    }
-
-    const shortName = this.config.SYM_META[pos.sym] ? this.config.SYM_META[pos.sym].short : pos.sym;
-    this.toast(label, shortName + ' closed @ ' + this.fmtPrice(price, m.dec),
-      label === 'TP hit' ? 'ok' : 'err');
-    this.flushSave(true);
   }
 
   openPosDetail(sym) {
@@ -535,7 +553,7 @@ class DeltaPaperApp {
     this.$('pdEntry').textContent = this.fmtPrice(pos.entry, m.dec);
     this.$('pdQty').textContent  = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' ΓÇó ' + this.fmtQty(pos.qty);
     this.$('pdMargin').textContent = this.fmtUsd(pos.margin) + ' $';
-    this.$('pdLiq').textContent    = this.fmtPrice(this.liqPrice(pos), m.dec);
+    this.$('pdLiq').textContent    = this.fmtPrice(this.financial.liquidationPrice(pos), m.dec);
 
     this.$('pdTpIn').value = pos.tp ? pos.tp : '';
     this.$('pdSlIn').value = pos.sl ? pos.sl : '';
@@ -845,8 +863,7 @@ class DeltaPaperApp {
 
   startSimulationLoop() {
     setInterval(() => {
-      this.checkTPSL();
-      this.checkLiquidations();
+      this._checkTradingTriggers();
       // Refresh liquidation heatmap (reads positions, redraws canvas)
       if (this.heatmap) this.heatmap.refresh();
       this.markDirty();
