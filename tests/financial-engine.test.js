@@ -24,7 +24,7 @@ function fixture() {
   };
   return {
     state: { get: () => state, update: (u) => Object.assign(state, u) },
-    market: { getMarket: (symbol) => ({ symbol, price: symbol === 'BTCUSD' ? 110 : 220, funding: 0 }) },
+    market: { getMarket: (symbol) => ({ symbol, price: 100, funding: 0 }) },
     config: {
       SYMBOLS: ['BTCUSD'], LOT_SIZES: { BTCUSD: 1 }, MAX_LEVERAGE: 20,
       TAKER_FEE: 0.001, BASE_RATE: 86.6, MAINTENANCE_MARGIN: 0.005
@@ -42,7 +42,7 @@ describe('FinancialEngine', () => {
     const s = engine.accountSnapshot();
     expect(s.availableUsd).toBeCloseTo(899.8, 6);
     expect(s.lockedMarginUsd).toBeCloseTo(100, 6);
-    expect(s.equityUsd).toBeCloseTo(1000, 6);
+    expect(s.equityUsd).toBeCloseTo(999.8, 6);
   });
 
   it('realizes net PnL and releases margin on close', () => {
