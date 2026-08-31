@@ -140,22 +140,6 @@ class DeltaPaperApp {
     return this.chartController.init();
   }
 
-  _setChartData(data, keepRange) {
-    return this.chartController && this.chartController.setData(data, keepRange);
-  }
-
-  _loadCandles(sym, tf) {
-    return this.chartController && this.chartController.load(sym, tf);
-  }
-
-  _loadOlder() {
-    return this.chartController && this.chartController.loadOlder();
-  }
-
-  _feedTick(price) {
-    return this.chartController && this.chartController.feedTick(price);
-  }
-
   _initVisualization() {
     if (!this._tvChart || !this._tvCandle) return;
 
@@ -470,7 +454,7 @@ class DeltaPaperApp {
     if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = this.curLots;
     this._clearTpSlLines();
     this.markDirty();
-    this._loadCandles(sym);
+    if (this.chartController) this.chartController.load(sym);
   }
 
   adjustLeverage(delta) {

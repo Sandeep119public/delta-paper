@@ -22,7 +22,8 @@ class AppState {
       name: 'Trader',
       uid: 'DE-IN-' + (10000000 + Math.floor(Math.random() * 89999999)),
       createdAt: Date.now(),
-      stateVersion: 1,
+      schemaVersion: 1,
+      revision: 1,
       updatedAt: Date.now(),
       inr: cfg.START_INR,
       usd: 0,
@@ -43,6 +44,21 @@ class AppState {
   }
 
   /**
+   * Validate a persisted snapshot. Rejects null positions/lots, NaN, Infinity,
+   * arrays where objects are expected, and missing required fields.
+   */
+  isValidSnapshot(s) {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return false;
+    if (typeof s.inr !== 'number' || !Number.isFinite(s.inr) || s.inr < 0) return false;
+    if (s.usd !== undefined && (typeof s.usd !== 'number' || !Number.isFinite(s.usd) || s.usd < 0)) return false;
+    if (s.positions === null || (s.positions !== undefined && (typeof s.positions !== 'object' || Array.isArray(s.positions)))) return false;
+    if (s.lots === null || (s.lots !== undefined && (typeof s.lots !== 'object' || Array.isArray(s.lots)))) return false;
+    if (s.history !== undefined && !Array.isArray(s.history)) return false;
+    if (s.ledger !== undefined && !Array.isArray(s.ledger)) return false;
+    return true;
+  }
+
+  /**
    * Load state from IndexedDB (primary) or localStorage (fallback)
    */
   async load() {
@@ -59,12 +75,13 @@ class AppState {
 
       const newer = (a,b) => {
         if (!a) return b; if (!b) return a;
-        const av = Number(a.stateVersion||0), bv = Number(b.stateVersion||0);
+        const av = Number(a.revision||a.stateVersion||0), bv = Number(b.revision||b.stateVersion||0);
         if (av !== bv) return av > bv ? a : b;
         return Number(a.updatedAt||a.lastSeen||0) >= Number(b.updatedAt||b.lastSeen||0) ? a : b;
       };
-      const valid=s=>s&&typeof s==='object'&&Number.isFinite(Number(s.inr))&&Number(s.inr)>=0&&typeof s.positions==='object'&&typeof s.lots==='object';
-      const parsed = newer(valid(idbState)?idbState:null, valid(localState)?localState:null);
+      const validIdb = this.isValidSnapshot(idbState);
+      const validLocal = this.isValidSnapshot(localState);
+      const parsed = newer(validIdb ? idbState : null, validLocal ? localState : null);
       this.state = parsed ? { ...this.createDefault(), ...parsed } : this.createDefault();
       this.migrateState();
       this._dirty = true;
@@ -109,7 +126,7 @@ class AppState {
     try {
       this.state.lastSeen = Date.now();
       this.state.updatedAt = this.state.lastSeen;
-      this.state.stateVersion = Number(this.state.stateVersion || 0) + 1;
+      this.state.revision = Number(this.state.revision || 0) + 1;
       localStorage.setItem(this.config.STORE_KEY, JSON.stringify(this.state));
       if (this.storage && this.storage.db) {
         const clone = { key: this.config.STORE_KEY };
@@ -133,11 +150,20 @@ class AppState {
   }
 
   /**
-   * Migrate old state versions to current format
+   * Migrate old state versions to current format.
+   * schemaVersion tracks the data shape; revision tracks saves.
    */
   migrateState() {
-    // Future migration logic can be added here
-    // Example: if (!this.state.version) { ... }
+    const sv = Number(this.state.schemaVersion || 1);
+    if (sv < 1) {
+      // Migrate from pre-versioned state
+      if (this.state.stateVersion !== undefined && this.state.revision === undefined) {
+        this.state.revision = Number(this.state.stateVersion);
+      }
+      delete this.state.stateVersion;
+      this.state.schemaVersion = 1;
+    }
+    // Future: if (sv < 2) { ... }
   }
 
   /**

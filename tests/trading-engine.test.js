@@ -52,3 +52,62 @@ describe('TradingEngine',()=>{
    expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(liq,6);
  });
 });
+
+describe('TradingEngine execution price isolation',()=>{
+ let f; beforeEach(()=>{f=fixture();});
+
+ it('TP uses the exact trigger price, not a later market price',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
+   f.raw.positions.BTCUSD.tp=105;
+   f.setLive(200); // market moved AFTER TP trigger
+   f.trading.onPrice('BTCUSD',105);
+   expect(f.raw.positions.BTCUSD).toBeUndefined();
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(105,6);
+ });
+
+ it('SL uses the exact trigger price, not a later market price',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
+   f.raw.positions.BTCUSD.sl=95;
+   f.setLive(10); // market moved AFTER SL trigger
+   f.trading.onPrice('BTCUSD',95);
+   expect(f.raw.positions.BTCUSD).toBeUndefined();
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(95,6);
+ });
+
+ it('liquidation uses the exact trigger price',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:2});
+   const pos=f.raw.positions.BTCUSD;
+   const liq=f.trading.financial.liquidationPrice(pos);
+   f.setLive(0); // market crashed further
+   f.trading.onPrice('BTCUSD',liq);
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(liq,6);
+ });
+
+ it('replay TP uses historical price not live market price',()=>{
+   f.trading.enterReplay(); f.trading.setReplayPrice('BTCUSD',100,1);
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
+   f.raw.positions.BTCUSD.tp=105;
+   f.setLive(50000); // live price is irrelevant in replay
+   f.trading.onPrice('BTCUSD',105);
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(105,6);
+ });
+
+ it('executionPrice parameter overrides market price in executeMarket',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1,executionPrice:999});
+   expect(f.raw.positions.BTCUSD.entry).toBeCloseTo(999,6);
+ });
+
+ it('close with explicit executionPrice uses that price',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
+   f.trading.close('BTCUSD','MANUAL',42);
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(42,6);
+ });
+
+ it('no price change after trigger does not affect fill',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
+   f.raw.positions.BTCUSD.tp=105;
+   f.trading.onPrice('BTCUSD',106); // price overshoots TP
+   expect(f.raw.positions.BTCUSD).toBeUndefined();
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(106,6);
+ });
+});

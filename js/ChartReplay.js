@@ -7,10 +7,11 @@ class ChartReplay {
     this.index=0; this.timer=null; this.source=[]; this.startedAt=0;
   }
   async start(){
-    const a=this.app;
-    if((!a._historyCache || a._historyCache.length<20) && typeof a._loadCandles==='function'){
+    const a=this.app, cc=a.chartController;
+    if(!a._historyCache || a._historyCache.length<20){
       this._status('Loading history…');
-      await a._loadCandles(a.selSym,a._tf);
+      if(cc) await cc.load(a.selSym,a._tf);
+      else if(typeof a._loadCandles==='function') await a._loadCandles(a.selSym,a._tf);
       await new Promise(resolve=>{
         const until=Date.now()+8000;
         const tick=()=>((a._historyCache||[]).length>=20||Date.now()>until)?resolve():setTimeout(tick,120);
@@ -53,9 +54,10 @@ class ChartReplay {
   pause(){this.playing=false;clearTimeout(this.timer);this.ui();if(this.active)this._status('Paused');}
   stop(){
     this.pause();
-    const a=this.app;
+    const a=this.app, cc=a.chartController;
     this.active=false;
-    if(a._historyCache && a._historyCache.length && a._setChartData) a._setChartData(a._historyCache);
+    if(cc) cc.setData(a._historyCache);
+    else if(a._setChartData) a._setChartData(a._historyCache);
     this.source=[]; if(a.trading)a.trading.clearReplay(); this.ui(); this._status('');
   }
   setSpeed(v){this.speed=Math.max(1,Math.min(50,Number(v)||1));if(this.playing)this._status('Playing • '+this.speed+'x');}

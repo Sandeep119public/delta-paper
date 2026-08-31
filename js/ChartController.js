@@ -1,7 +1,6 @@
 /* Chart controller: one owner for history, live updates and replay. */
 (function(global){
 'use strict';
-if(!global.DeltaPaperApp)return;
 const TF={ '1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400 };
 const cleanRows=data=>data.map(c=>{const raw=Number(c.time??c.openTime);const time=Math.floor(raw>1e11?raw/1000:raw);return {time,open:+c.open,high:+c.high,low:+c.low,close:+c.close,volume:+c.volume||0};}).filter(c=>c.time>0&&[c.open,c.high,c.low,c.close].every(Number.isFinite));
 class ChartController {
