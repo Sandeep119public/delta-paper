@@ -4,7 +4,7 @@
 if(!global.DeltaPaperApp)return;
 const oldInit=DeltaPaperApp.prototype._initChart;
 const TF={ '1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400 };
-const cleanRows=data=>data.map(c=>({time:Math.floor(Number(c.time||c.openTime/1000)),open:+c.open,high:+c.high,low:+c.low,close:+c.close,volume:+c.volume||0})).filter(c=>c.time>0&&[c.open,c.high,c.low,c.close].every(Number.isFinite));
+const cleanRows=data=>data.map(c=>{const raw=Number(c.time??c.openTime);const time=Math.floor(raw>1e11?raw/1000:raw);return {time,open:+c.open,high:+c.high,low:+c.low,close:+c.close,volume:+c.volume||0};}).filter(c=>c.time>0&&[c.open,c.high,c.low,c.close].every(Number.isFinite));
 DeltaPaperApp.prototype._initChart=function(){
  const container=this.$('tv-chart-container');
  if(!container||typeof LightweightCharts==='undefined')return oldInit.call(this);
@@ -13,7 +13,7 @@ DeltaPaperApp.prototype._initChart=function(){
  this._tvCandle=this._tvChart.addSeries?this._tvChart.addSeries(LightweightCharts.CandlestickSeries,opts):this._tvChart.addCandlestickSeries(opts);
  this._tvVol=this._tvChart.addSeries?this._tvChart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:''}):this._tvChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
  if(this._tvVol.priceScale)this._tvVol.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
- this._chartData=global.chartDataService;this.replay=new global.ChartReplay(this);const rb=this.$('replayBtn'),rp=this.$('replayPlay'),rs=this.$('replayStop'),rz=this.$('replaySpeed');rb&&rb.addEventListener('click',async()=>{try{if(!this.replay.active){await this.replay.start();rp.style.display='';rs.style.display='';rz.style.display='';}else this.replay.stop();}catch(e){this.toast('Replay unavailable',e.message,'err');}});rp&&rp.addEventListener('click',()=>this.replay.playing?this.replay.pause():this.replay.play());rs&&rs.addEventListener('click',()=>this.replay.stop());rz&&rz.addEventListener('change',()=>this.replay.setSpeed(rz.value));this._chartRequest=0;this._loadCandles(this.selSym,this._tf);
+ this._chartData=global.chartDataService;this.replay=new global.ChartReplay(this);const rb=this.$('replayBtn'),rp=this.$('replayPlay'),rs=this.$('replayStop'),rz=this.$('replaySpeed');rb&&rb.addEventListener('click',async()=>{try{rb.disabled=true;if(!this.replay.active)await this.replay.start();else this.replay.stop();}catch(e){this.toast('Replay unavailable',e.message,'err');}finally{rb.disabled=false;}});rp&&rp.addEventListener('click',()=>this.replay.playing?this.replay.pause():this.replay.play());rs&&rs.addEventListener('click',()=>this.replay.stop());rz&&rz.addEventListener('change',()=>this.replay.setSpeed(rz.value));this._chartRequest=0;this._loadCandles(this.selSym,this._tf);
  this.market.subscribe(()=>{const m=this.market.getMarket(this.selSym);if(m&&m.price>0)this._feedTick(m.price);});
  document.querySelectorAll('.tf-row button[data-tf]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf-row button[data-tf]').forEach(x=>x.classList.remove('on'));b.classList.add('on');this._loadCandles(this.selSym,b.dataset.tf);}));
  this._tvChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(range&&range.from<80&&!this._loadingOlder&&this._historyCache.length)this._loadOlder();});
