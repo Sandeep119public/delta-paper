@@ -1,12 +1,12 @@
-const CACHE = 'delta-paper-v4';
+const CACHE = 'delta-paper-v5';
 const ASSETS = [
   './','./index.html','./manifest.json','./css/styles.css',
   './js/config.js','./js/console.js','./js/EventEmitter.js','./js/Storage.js',
   './js/services/DeltaApiService.js','./js/services/WebSocketService.js','./js/services/MarketDataService.js',
   './js/store.js','./js/state.js','./js/validator.js','./js/OrderEngine.js',
   './js/FundingSimulator.js','./js/RiskMetrics.js','./js/KeyboardShortcuts.js',
-  './js/SimulationEngine.js','./js/BacktestEngine.js','./js/MonteCarloEngine.js',
-  './js/VwapIndicator.js','./js/LiquidationHeatmap.js',
+  './js/VwapIndicator.js','./js/FinancialEngine.js','./js/TradingEngine.js',
+  './js/services/CandleStore.js','./js/services/ChartDataService.js','./js/ChartReplay.js','./js/ChartIntegrationPatch.js','./js/MarketDataStatusPatch.js',
   './js/app.js','./js/boot.js',
   './icons/icon-192.png','./icons/icon-512.png','./icons/maskable-512.png'
 ];
