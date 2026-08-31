@@ -1,4 +1,4 @@
-const CACHE = 'delta-paper-v5';
+const CACHE = 'delta-paper-v6';
 const ASSETS = [
   './','./index.html','./manifest.json','./css/styles.css',
   './js/config.js','./js/console.js','./js/EventEmitter.js','./js/Storage.js',
@@ -12,7 +12,12 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(async c => {
+    await Promise.all(ASSETS.map(async asset => {
+      try { const res = await fetch(asset, { cache: 'no-cache' }); if (res.ok) await c.put(asset, res); }
+      catch (_) { /* optional asset: do not brick installation */ }
+    }));
+  }).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
