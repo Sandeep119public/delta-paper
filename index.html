@@ -75,7 +75,7 @@
         <button data-tf="15m">15m</button>
         <button data-tf="1h">1h</button>
         <span class="tf-sep"></span>
-        <button id="vwapToggle" class="tf-btn" title="VWAP">VWAP</button>
+        <button id="vwapToggle" class="tf-btn" title="VWAP">VWAP</button><span class="tf-sep"></span><button id="replayBtn" class="tf-btn" title="Chart Replay">Replay</button><button id="replayPlay" class="tf-btn" style="display:none">Play</button><select id="replaySpeed" class="replay-speed" style="display:none"><option value="1">1x</option><option value="5">5x</option><option value="10">10x</option><option value="25">25x</option></select><button id="replayStop" class="tf-btn" style="display:none">Stop</button>
         
       </div>
     </div>
@@ -431,6 +431,7 @@
 <script src="js/BacktestEngine.js"></script>
 <script src="js/MonteCarloEngine.js"></script>
 <script src="js/VwapIndicator.js"></script>
+<script src="js/ChartReplay.js"></script>
 <script src="js/LiquidationHeatmap.js"></script>
 <script src="js/app.js"></script>
 <script src="js/boot.js"></script>
