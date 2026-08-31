@@ -65,144 +65,24 @@ class DeltaPaperApp {
   }
 
   _initChart() {
-    const container = this.$('tv-chart-container');
-    if (!container || typeof LightweightCharts === 'undefined') return;
-
-    this._tvChart = LightweightCharts.createChart(container, {
-      autoSize: true,
-      layout: { background: { color: '#111827' }, textColor: '#94a3b8', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-      grid: { vertLines: { color: 'rgba(36, 52, 72, 0.5)' }, horzLines: { color: 'rgba(36, 52, 72, 0.5)' } },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#243448', scaleMargins: { top: 0.1, bottom: 0.25 } },
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: '#243448',
-        rightOffset: 6,
-        minBarSpacing: 6,
-        allowBoldLabels: false,
-        tickMarkFormatter: (t) => {
-          const d = new Date(t * 1000);
-          return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-        },
-      },
-    });
-
-    const opts = {
-      upColor: '#10b981', downColor: '#ef4444', borderVisible: false,
-      wickUpColor: '#10b981', wickDownColor: '#ef4444',
-    };
-    this._tvCandle = (typeof this._tvChart.addSeries === 'function')
-      ? this._tvChart.addSeries(LightweightCharts.CandlestickSeries, opts)
-      : this._tvChart.addCandlestickSeries(opts);
-
-    this._tvVol = (typeof this._tvChart.addSeries === 'function')
-      ? this._tvChart.addSeries(LightweightCharts.HistogramSeries, {
-          priceFormat: { type: 'volume' }, priceScaleId: '',
-          color: 'rgba(59,130,246,0.2)',
-        })
-      : this._tvChart.addHistogramSeries({
-          priceFormat: { type: 'volume' }, priceScaleId: '',
-        });
-    if (this._tvVol.priceScale) this._tvVol.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-
-    this._loadCandles();
-
-    this.market.subscribe(() => {
-      const m = this.market.getMarket(this.selSym);
-      if (m && m.price > 0) this._feedTick(m.price);
-    });
-
-    const tfBtns = document.querySelectorAll('.tf-row button[data-tf]');
-    tfBtns.forEach(b => {
-      b.addEventListener('click', () => {
-        tfBtns.forEach(x => x.classList.remove('on'));
-        b.classList.add('on');
-        this._loadCandles(this.selSym, b.dataset.tf);
-      });
-    });
-
-    this._tvChart.timeScale().subscribeVisibleLogicalRangeChange(async (range) => {
-      if (range && range.from < 50 && !this._loadingOlder && this._historyCache.length) {
-        this._loadingOlder = true;
-        const first = this._historyCache[0].time;
-        const end = first - 1;
-        const start = end - this._tfSec * 500;
-        const url = 'https://api.india.delta.exchange/v2/history/candles'
-          + `?resolution=${this._tf}&symbol=${this.selSym}&start=${start}&end=${end}`;
-        try {
-          const json = await (await fetch(url)).json();
-          if (json.success && Array.isArray(json.result) && json.result.length) {
-            const older = this._sanitizeCandles(json.result);
-            this._historyCache = older.concat(this._historyCache);
-            if (this._tvCandle) this._tvCandle.setData(this._historyCache);
-            if (this._tvVol) this._tvVol.setData(this._historyCache.map(c => ({
-              time: c.time, value: c.volume || 0,
-              color: c.close >= c.open ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'
-            })));
-          }
-        } catch (e) { /* ignore */ }
-        this._loadingOlder = false;
-      }
-    });
+    if (!this.chartController) throw new Error('ChartController is not initialized');
+    return this.chartController.init();
   }
 
-  _sanitizeCandles(list) {
-    const seen = new Set();
-    const out = [];
-    for (const c of list) {
-      let t = Number(c.time);
-      if (!isFinite(t)) continue;
-      if (t > 1e11) t = Math.floor(t / 1000);
-      t = Math.floor(t);
-      const o = +c.open, h = +c.high, l = +c.low, cl = +c.close;
-      if (![o, h, l, cl].every(v => isFinite(v) && v > 0)) continue;
-      if (seen.has(t)) continue;
-      seen.add(t);
-      out.push({
-        time: t, open: o,
-        high: Math.max(o, h, l, cl),
-        low: Math.min(o, h, l, cl),
-        close: cl,
-        volume: Math.max(0, +c.volume || 0)
-      });
-    }
-    out.sort((a, b) => a.time - b.time);
-    return out;
+  _setChartData(data, keepRange) {
+    return this.chartController && this.chartController.setData(data, keepRange);
   }
 
   _loadCandles(sym, tf) {
-    if (sym) this.selSym = sym;
-    if (tf) this._tf = tf;
-    this._tfSec = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 }[this._tf] || 60;
-    this._curCandle = null;
-    this._historyCache = [];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - this._tfSec * 500;
-    const url = 'https://api.india.delta.exchange/v2/history/candles'
-      + `?resolution=${this._tf}&symbol=${this.selSym}&start=${start}&end=${end}`;
-    fetch(url)
-      .then(r => r.json())
-      .then(json => {
-        if (!json.success || !Array.isArray(json.result) || !json.result.length) return;
-        const data = this._sanitizeCandles(json.result);
-        if (!data.length) return;
-        this._historyCache = data;
-        if (this._tvCandle) this._tvCandle.setData(data);
-        if (this._tvVol) {
-          this._tvVol.setData(data.map(c => ({
-            time: c.time, value: c.volume || 0,
-            color: c.close >= c.open ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'
-          })));
-        }
-        this._curCandle = { ...data[data.length - 1] };
-        if (this._tvChart) this._tvChart.timeScale().scrollToRealTime();
-        if (this.vwap) this.vwap.setData(data);
-      })
-      .catch(e => {
-        DELTA_LOGGER.log('[Chart] candle load failed', e);
-        setTimeout(() => this._loadCandles(this.selSym, this._tf), 5000);
-      });
+    return this.chartController && this.chartController.load(sym, tf);
+  }
+
+  _loadOlder() {
+    return this.chartController && this.chartController.loadOlder();
+  }
+
+  _feedTick(price) {
+    return this.chartController && this.chartController.feedTick(price);
   }
 
   _initVisualization() {
