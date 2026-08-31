@@ -7,9 +7,6 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint js/ tests/",
-    "lint:fix": "eslint js/ tests/ --fix",
-    "format": "prettier --write \"js/**/*.js\" \"tests/**/*.js\" \"css/**/*.css\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -24,12 +21,9 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@eslint/js": "^9.27.0",
     "@types/node": "^26.3.0",
     "decimal.js": "^10.6.0",
-    "eslint": "^9.27.0",
     "jsdom": "^29.1.1",
-    "prettier": "^3.5.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
