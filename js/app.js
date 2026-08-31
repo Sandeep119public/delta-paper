@@ -561,7 +561,22 @@ class DeltaPaperApp {
     this.markDirty();
   }
 
-  executeTrade(side) { this.placeOrder(side); }
+  placeOrder(side) {
+    try {
+      if (!this.trading) throw new Error('Trading engine is not ready');
+      const S = this.state.get(), lots = Math.max(1, Number(this.curLots || 1)), leverage = Number(S.lev || 1);
+      const result = this.trading.executeMarket({ symbol: this.selSym, side, lots, leverage });
+      const meta = this.market.getMarket(this.selSym) || {};
+      this.toast(side === 1 ? 'LONG OPENED' : 'SHORT OPENED', (this.config.SYM_META[this.selSym]?.short || this.selSym) + ' @ ' + this.fmtPrice(result.fill, meta.dec || 4), 'ok');
+      this.markDirty();
+      return true;
+    } catch (e) {
+      this.toast('Order rejected', e.message, 'err');
+      return false;
+    }
+  }
+
+  executeTrade(side) { return this.placeOrder(side); }
 
   closePosition(sym) {
     try {
