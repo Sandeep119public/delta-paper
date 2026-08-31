@@ -6,7 +6,7 @@ const ASSETS = [
   './js/store.js','./js/state.js','./js/validator.js','./js/OrderEngine.js',
   './js/FundingSimulator.js','./js/RiskMetrics.js','./js/KeyboardShortcuts.js',
   './js/VwapIndicator.js','./js/FinancialEngine.js','./js/TradingEngine.js',
-  './js/services/CandleStore.js','./js/services/ChartDataService.js','./js/ChartReplay.js','./js/ChartIntegrationPatch.js','./js/MarketDataStatusPatch.js',
+  './js/services/CandleStore.js','./js/services/ChartDataService.js','./js/ChartReplay.js','./js/ChartController.js','./js/MarketDataStatusPatch.js',
   './js/app.js','./js/boot.js',
   './icons/icon-192.png','./icons/icon-512.png','./icons/maskable-512.png'
 ];
