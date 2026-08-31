@@ -21,7 +21,7 @@ class ChartReplay {
     this.source=a._historyCache.slice().sort((x,y)=>Number(x.time)-Number(y.time));
     this.index=Math.max(19,Math.min(this.source.length-2,Math.floor(this.source.length*.70)));
     this.active=true; this.playing=false; this.startedAt=Date.now();
-    if(a.trading){a.trading.enterReplay(); const cur=this.source[this.index]; a.trading.setReplayPrice(a.selSym, Number(cur.close), Number(cur.time));} if(a.trading) a.trading.enterReplay();
+    if(a.trading){a.trading.enterReplay(); const cur=this.source[this.index]; a.trading.setReplayPrice(a.selSym, Number(cur.close), Number(cur.time));}
     this.render(); this.ui(); this._status('Replay ready');
     return true;
   }
@@ -30,7 +30,7 @@ class ChartReplay {
     if(a._tvCandle) a._tvCandle.setData(visible);
     if(a._tvVol) a._tvVol.setData(visible.map(c=>({time:c.time,value:Number(c.volume)||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));
     a._curCandle=visible[visible.length-1]||null;
-    if(a.trading && a._curCandle){a.trading.setReplayPrice(a.selSym, Number(a._curCandle.close), Number(a._curCandle.time)); a.trading.onPrice(a.selSym, Number(a._curCandle.close));} if(a.trading&&a._curCandle) a.trading.setReplayPrice(a.selSym,a._curCandle.close,a._curCandle.time);
+    if(a.trading && a._curCandle){a.trading.setReplayPrice(a.selSym, Number(a._curCandle.close), Number(a._curCandle.time)); a.trading.onPrice(a.selSym, Number(a._curCandle.close));}
     if(a._tvChart){try{a._tvChart.timeScale().scrollToRealTime();}catch(_){}}
   }
   step(){
@@ -53,9 +53,9 @@ class ChartReplay {
   stop(){
     this.pause();
     const a=this.app;
-    this.active=false; if(a.trading) a.trading.clearReplay();
+    this.active=false;
     if(a._historyCache && a._historyCache.length && a._setChartData) a._setChartData(a._historyCache);
-    this.source=[]; if(a.trading)a.trading.clearReplay(); this.ui(); this._status('');
+    this.source=[]; this.ui(); this._status('');
   }
   setSpeed(v){this.speed=Math.max(1,Math.min(50,Number(v)||1));if(this.playing)this._status('Playing • '+this.speed+'x');}
   _status(text){const el=this.app.$('replayStatus');if(el)el.textContent=text;}
