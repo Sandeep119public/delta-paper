@@ -5,8 +5,6 @@
 
 import Decimal from 'decimal.js';
 import type { 
-  Position, 
-  MarketData, 
   PnLResult, 
   OrderValidationResult,
   TradingConfig 
@@ -172,7 +170,7 @@ export function getPnLAnalysis(
   size: Decimal,
   margin: Decimal,
   direction: 1 | -1,
-  leverage: number
+  _leverage: number
 ): PnLResult {
   const unrealizedPnL = calculateUnrealizedPnL(entryPrice, currentPrice, size, direction);
   const unrealizedPnLPercent = calculatePnLPercent(unrealizedPnL, margin);
