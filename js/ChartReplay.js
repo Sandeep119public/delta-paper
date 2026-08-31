@@ -1,24 +1,15 @@
-/* Clean TradingView-style chart replay. No backtest engine required. */
-class ChartReplay {
-  constructor(app){this.app=app;this.active=false;this.playing=false;this.speed=1;this.cursor=0;this.candles=[];this.timer=null;this.snapshot=null;}
-  async start(){
-    const chart={candleSeries:this.app._tvCandle,volumeSeries:this.app._tvVol};
-    if(!chart.candleSeries) throw new Error('Chart not ready');
-    this.snapshot=await window.chartDataService.latest(this.app.state.get().selectedSymbol,this.app.chartTf||'1m',1000);
-    if(this.snapshot.length<20) throw new Error('Not enough history');
-    this.active=true;this.playing=false;this.candles=this.snapshot.map(x=>({...x}));
-    this.cursor=Math.max(10,this.candles.length-200);
-    chart.candleSeries.setData(this.candles.slice(0,this.cursor).map(this.toChart));
-    chart.volumeSeries&&chart.volumeSeries.setData(this.candles.slice(0,this.cursor).map(x=>({time:x.time/1000,value:x.volume||0})));
-    this.app.toast('Replay started','Future candles are now hidden','ok');this.updateUI();
-  }
-  toChart(c){return {time:Math.floor(c.time/1000),open:+c.open,high:+c.high,low:+c.low,close:+c.close};}
-  step(){if(!this.active||this.cursor>=this.candles.length)return this.pause();const c=this.candles[this.cursor++],chart=this.app.chartIntegration;chart.candleSeries.update(this.toChart(c));chart.volumeSeries&&chart.volumeSeries.update({time:c.time/1000,value:c.volume||0});this.updateUI();}
-  play(){if(!this.active)return;this.playing=true;this.loop();this.updateUI();}
-  loop(){clearTimeout(this.timer);if(!this.playing)return;this.step();if(this.cursor>=this.candles.length){this.pause();return;}this.timer=setTimeout(()=>this.loop(),Math.max(40,1000/this.speed));}
-  pause(){this.playing=false;clearTimeout(this.timer);this.updateUI();}
-  stop(){this.pause();this.active=false;const chart={candleSeries:this.app._tvCandle,volumeSeries:this.app._tvVol};if(chart&&this.snapshot){chart.candleSeries.setData(this.snapshot.map(this.toChart));chart.volumeSeries&&chart.volumeSeries.setData(this.snapshot.map(x=>({time:x.time/1000,value:x.volume||0})));}this.updateUI();}
-  setSpeed(v){this.speed=Math.max(1,Math.min(50,+v||1));if(this.playing){this.play();}this.updateUI();}
-  updateUI(){const a=this.app.$('replayBtn'),p=this.app.$('replayPlay'),s=this.app.$('replayStop'),z=this.app.$('replaySpeed');if(a)a.classList.toggle('on',this.active);if(p)p.textContent=this.playing?'Pause':'Play';if(s)s.disabled=!this.active;if(z)z.value=this.speed;}
+/* Lightweight chart replay controller compatible with ChartIntegrationPatch. */
+(function(global){'use strict';
+class ChartReplay{
+constructor(app){this.app=app;this.active=false;this.playing=false;this.speed=1;this.index=0;this.timer=null;this.source=[];}
+async start(){const a=this.app;if(!a._historyCache||a._historyCache.length<20)throw new Error('Historical candles are still loading');this.source=a._historyCache.slice().sort((x,y)=>x.time-y.time);this.index=Math.max(10,Math.floor(this.source.length*.7));this.active=true;this.playing=false;this.render();this.ui();a.toast('Replay ready','Future candles are hidden. Press Play to advance.','ok');}
+render(){const a=this.app,v=this.source.slice(0,this.index+1);if(a._tvCandle)a._tvCandle.setData(v);if(a._tvVol)a._tvVol.setData(v.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));a._curCandle=v[v.length-1]||null;if(a._tvChart)a._tvChart.timeScale().scrollToRealTime();}
+step(){if(!this.active)return;if(this.index>=this.source.length-1){this.pause();return;}this.index++;this.render();}
+play(){if(!this.active)return;this.playing=true;this.ui();this.loop();}
+loop(){clearTimeout(this.timer);if(!this.playing)return;this.step();if(!this.playing)return;this.timer=setTimeout(()=>this.loop(),Math.max(60,1000/this.speed));}
+pause(){this.playing=false;clearTimeout(this.timer);this.ui();}
+stop(){this.pause();if(!this.active)return;this.active=false;const a=this.app;this.source=[];if(a._historyCache)a._setChartData(a._historyCache);this.ui();}
+setSpeed(v){this.speed=Math.max(1,Math.min(50,Number(v)||1));}
+ui(){const a=this.app,b=a.$('replayBtn'),p=a.$('replayPlay'),s=a.$('replayStop'),z=a.$('replaySpeed');if(b){b.textContent=this.active?'Exit Replay':'Replay';b.classList.toggle('on',this.active);}if(p){p.textContent=this.playing?'Pause':'Play';p.style.display=this.active?'':'none';}if(s)s.style.display=this.active?'':'none';if(z){z.style.display=this.active?'':'none';z.value=this.speed;}}
 }
-window.ChartReplay=ChartReplay;
+global.ChartReplay=ChartReplay;})(window);
