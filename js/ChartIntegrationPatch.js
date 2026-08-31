@@ -9,7 +9,7 @@ DeltaPaperApp.prototype._initChart=function(){
  const container=this.$('tv-chart-container');
  if(!container||typeof LightweightCharts==='undefined')return oldInit.call(this);
  this._tvChart=LightweightCharts.createChart(container,{autoSize:true,layout:{background:{color:'#111827'},textColor:'#94a3b8',fontFamily:"'JetBrains Mono',monospace",fontSize:11},grid:{vertLines:{color:'rgba(36,52,72,.5)'},horzLines:{color:'rgba(36,52,72,.5)'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},rightPriceScale:{borderColor:'#243448',scaleMargins:{top:.08,bottom:.25}},timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#243448',rightOffset:8,minBarSpacing:5,shiftVisibleRangeOnNewBar:true}});
- const opts={upColor:'#10b981',downColor:'#ef4444',borderVisible:false,wickUpColor:'#10b981',wickDownColor:'#ef4444'};
+ const opts={upColor:'#10b981',downColor:'#ef4444',borderVisible:false,wickUpColor:'#10b981',wickDownColor:'#ef4444',priceFormat:{type:'price',precision:4,minMove:0.0001}};
  this._tvCandle=this._tvChart.addSeries?this._tvChart.addSeries(LightweightCharts.CandlestickSeries,opts):this._tvChart.addCandlestickSeries(opts);
  this._tvVol=this._tvChart.addSeries?this._tvChart.addSeries(LightweightCharts.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:''}):this._tvChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
  if(this._tvVol.priceScale)this._tvVol.priceScale().applyOptions({scaleMargins:{top:.8,bottom:0}});
