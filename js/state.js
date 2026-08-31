@@ -22,6 +22,8 @@ class AppState {
       name: 'Trader',
       uid: 'DE-IN-' + (10000000 + Math.floor(Math.random() * 89999999)),
       createdAt: Date.now(),
+      stateVersion: 1,
+      updatedAt: Date.now(),
       inr: cfg.START_INR,
       usd: 0,
       lev: 10,
@@ -45,43 +47,32 @@ class AppState {
    */
   async load() {
     try {
-      let parsed = null;
-
-      // Try IndexedDB first
+      let idbState = null, localState = null;
       if (this.storage && this.storage.db) {
-        try {
-          parsed = await this.storage.get('settings', this.config.STORE_KEY);
-        } catch (e) {
-          DELTA_LOGGER.warn('[State] IndexedDB read failed, falling back:', e);
-        }
+        try { idbState = await this.storage.get('settings', this.config.STORE_KEY); }
+        catch (e) { DELTA_LOGGER.warn('[State] IndexedDB read failed:', e); }
       }
-
-      // Fall back to localStorage
-      if (!parsed) {
+      try {
         const stored = localStorage.getItem(this.config.STORE_KEY);
-        if (stored) {
-          parsed = JSON.parse(stored);
-          // Migrate to IndexedDB in background
-          if (this.storage && this.storage.db) {
-            this.storage.put('settings', { key: this.config.STORE_KEY, ...parsed }).catch(() => {});
-          }
-        }
-      }
+        if (stored) localState = JSON.parse(stored);
+      } catch (e) { DELTA_LOGGER.warn('[State] localStorage read failed:', e); }
 
-      if (parsed) {
-        this.state = { ...this.createDefault(), ...parsed };
-        this.migrateState();
-        DELTA_LOGGER.log('[State] Loaded from storage');
-      } else {
-        this.state = this.createDefault();
-        DELTA_LOGGER.log('[State] Created default state');
-      }
+      const newer = (a,b) => {
+        if (!a) return b; if (!b) return a;
+        const av = Number(a.stateVersion||0), bv = Number(b.stateVersion||0);
+        if (av !== bv) return av > bv ? a : b;
+        return Number(a.updatedAt||a.lastSeen||0) >= Number(b.updatedAt||b.lastSeen||0) ? a : b;
+      };
+      const parsed = newer(idbState, localState);
+      this.state = parsed ? { ...this.createDefault(), ...parsed } : this.createDefault();
+      this.migrateState();
+      this._dirty = true;
       this.flushSave();
+      DELTA_LOGGER.log(parsed ? '[State] Loaded newest persisted state' : '[State] Created default state');
       return this.state;
     } catch (e) {
       DELTA_LOGGER.error('[State] Load failed:', e);
-      this.state = this.createDefault();
-      this.flushSave();
+      this.state = this.createDefault(); this._dirty = true; this.flushSave();
       return this.state;
     }
   }
@@ -116,6 +107,8 @@ class AppState {
     if (!this._dirty || !this.state) return;
     try {
       this.state.lastSeen = Date.now();
+      this.state.updatedAt = this.state.lastSeen;
+      this.state.stateVersion = Number(this.state.stateVersion || 0) + 1;
       localStorage.setItem(this.config.STORE_KEY, JSON.stringify(this.state));
       if (this.storage && this.storage.db) {
         const clone = { key: this.config.STORE_KEY };
