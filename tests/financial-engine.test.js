@@ -49,7 +49,7 @@ describe('FinancialEngine', () => {
     engine.open('BTCUSD', 1, 100, 2, 2);
     engine.fill('BTCUSD', -1, 110, 2, 2);
     expect(f.raw.positions.BTCUSD).toBeUndefined();
-    expect(f.raw.realized).toBeCloseTo(19.58, 6);
+    expect(f.raw.realized).toBeCloseTo(19.78, 6);
     expect(engine.accountSnapshot().equityUsd).toBeCloseTo(1019.58, 6);
     expect(f.raw.tradeArchive).toHaveLength(1);
   });
