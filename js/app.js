@@ -605,62 +605,24 @@ class DeltaPaperApp {
   }
 
   checkTPSL() {
-    const S = this.state.get();
-    for (const k in S.positions) {
-      const pos = S.positions[k];
-      const m = this.market.getMarket(k);
-      if (!m || !(m.price > 0)) continue;
-
-      if (pos.dir === 1) {
-        if (pos.tp && m.price >= pos.tp) { this.closeAtTrigger(pos, 'TP hit', pos.tp); continue; }
-        if (pos.sl && m.price <= pos.sl) { this.closeAtTrigger(pos, 'SL hit', pos.sl); }
-      } else {
-        if (pos.tp && m.price <= pos.tp) { this.closeAtTrigger(pos, 'TP hit', pos.tp); continue; }
-        if (pos.sl && m.price >= pos.sl) { this.closeAtTrigger(pos, 'SL hit', pos.sl); }
-      }
-    }
+    this._checkTradingTriggers();
   }
 
   checkLiquidations() {
-    const S = this.state.get();
-    const hits = [];
-    for (const k in S.positions) {
-      if (!this.market.getMarket(k)) continue;
-      const pos = S.positions[k];
-      const lp = this.liqPrice(pos);
-      const p  = this.market.getMarket(k).price;
-      if ((pos.dir === 1 && p <= lp) || (pos.dir === -1 && p >= lp)) hits.push(k);
+    this._checkTradingTriggers();
+  }
+
+  _checkTradingTriggers() {
+    if (!this.trading) return;
+    const symbols = Object.keys({ ...(this.state.get().positions || {}) });
+    for (const symbol of symbols) {
+      const price = this.trading.price(symbol);
+      if (!(price > 0)) continue;
+      const before = this.state.get().positions?.[symbol];
+      const result = this.trading.onPrice(symbol, price);
+      if (result && before && result.reason === 'LIQUIDATION') this.toast('LIQUIDATED', (this.config.SYM_META[symbol]?.short || symbol) + ' position liquidated', 'err');
     }
-    if (!hits.length) return;
-
-    // Batch updates
-    let positions = { ...S.positions };
-    let losses = S.losses;
-    let worst = S.worst;
-    let history = [...S.history];
-
-    hits.forEach(k => {
-      const pos = positions[k];
-      delete positions[k];
-
-      losses += 1;
-      worst = Math.min(worst, -pos.margin);
-
-      const shortName = this.config.SYM_META[k] ? this.config.SYM_META[k].short : k;
-      history.unshift({ t: Date.now(), sym: k, label: '⚡ Liquidated', qty: pos.qty, price: this.liqPrice(pos), pnl: -pos.margin });
-      if (history.length > 100) history.length = 100;
-
-      this.toast('LIQUIDATED', '⚡ ' + shortName + ' — ' + this.fmtUsd(pos.margin) + ' USD lost', 'err');
-    });
-
-    // Single state update for all liquidations in this tick
-    this.state.update({ positions, losses, worst, history });
-    this.flushSave(true);
-
-    if (this.posDetailSym && !S.positions[this.posDetailSym]) {
-      this.posDetailSym = null;
-      this.closeModal('posOverlay');
-    }
+    this.state.flushSave();
   }
 
   liqPrice(pos) {
