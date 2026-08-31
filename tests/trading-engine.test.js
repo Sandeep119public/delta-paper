@@ -42,4 +42,13 @@ describe('TradingEngine',()=>{
    f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:1});
    expect(f.raw.positions.BTCUSD.entry).toBeCloseTo(110,6);
  });
+ it('liquidates through the same live price trigger path',()=>{
+   f.trading.executeMarket({symbol:'BTCUSD',side:1,lots:1,leverage:2});
+   const pos=f.raw.positions.BTCUSD;
+   const liq=f.trading.financial.liquidationPrice(pos);
+   f.trading.onPrice('BTCUSD',liq);
+   expect(f.raw.positions.BTCUSD).toBeUndefined();
+   expect(f.raw.tradeArchive.at(-1).reason).toBe('LIQUIDATION');
+   expect(f.raw.tradeArchive.at(-1).exitPrice).toBeCloseTo(liq,6);
+ });
 });
