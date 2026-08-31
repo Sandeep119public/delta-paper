@@ -563,116 +563,16 @@ class DeltaPaperApp {
 
   executeTrade(side) { this.placeOrder(side); }
 
-  closePosition(sym, price) {
-    const pos = this.state.get().positions[sym];
-    if (!pos) return;
-
-    const m = this.market.getMarket(sym);
-    if (!m) return;
-    const fill = pos.dir === 1 ? m.price * 0.9997 : m.price * 1.0003;
-    const fee = pos.qty * fill * this.config.TAKER_FEE;
-
-    this.applyFill(sym, -pos.dir, fill, pos.qty, pos.lev, fee, pos.lots);
-    const shortName = this.config.SYM_META[sym] ? this.config.SYM_META[sym].short : sym;
-    this.toast('Closed', shortName + ' @ ' + this.fmtPrice(fill, m.dec), 'ok');
-    this.flushSave(true);
-    this.markDirty();
-  }
-
-  handleMenuAction(action) {
-    switch (action) {
-      case 'funds':
-        this.closeModal('menuOverlay');
-        this.renderFunds();
-        this.openModal('fundsOverlay');
-        break;
-      case 'history':
-        this.closeModal('menuOverlay');
-        this.hisLen = -1;
-        this.renderHistory();
-        this.openModal('hisOverlay');
-        break;
-      case 'account':
-        this.closeModal('menuOverlay');
-        this.renderAcct();
-        this.openModal('acctOverlay');
-        break;
-    }
-  }
-
-  lotOf(sym) {
-    const m = this.market.getMarket(sym);
-    return m ? m.lot : (this.config.LOT_SIZES[sym] || 0.001);
-  }
-
-  defaultLots(sym) {
-    const m = this.market.getMarket(sym);
-    if (m && m.price > 0) {
-      return Math.max(1, Math.round(100 / (this.lotOf(sym) * m.price)));
-    }
-    return 1;
-  }
-
-  getLots(sym) {
-    const S = this.state.get();
-    if (S.lots[sym] && S.lots[sym] >= 1) return Math.round(S.lots[sym]);
-    return this.defaultLots(sym);
-  }
-
-  setLots(l) {
-    l = Math.max(1, Math.round(l));
-    this.curLots = l;
-    const S = this.state.get();
-    const lots = { ...S.lots, [this.selSym]: l };
-    this.state.update({ lots });
-    if (document.activeElement !== this.$('qtyIn')) this.$('qtyIn').value = l;
-    this.markDirty();
-  }
-
-  stepLots(d) { this.setLots(this.curLots + d); }
-
-  setMaxLots() {
-    const m = this.market.getMarket(this.selSym);
-    if (!m || !(m.price > 0)) return;
-
-    const S = this.state.get();
-    if (!(S.usd > 0)) return this.toast('No margin', 'Convert INR → USD first', 'err');
-
-    const lots = Math.floor((S.usd * 0.99 * S.lev) / (this.lotOf(this.selSym) * m.price));
-    this.setLots(Math.max(1, lots));
-  }
-
-  setNotionalLots(usd) {
-    const m = this.market.getMarket(this.selSym);
-    if (!m || !(m.price > 0)) return;
-    this.setLots(Math.max(1, Math.round(usd / (this.lotOf(this.selSym) * m.price))));
-  }
-
-  placeOrder(side) {
-    const m = this.market.getMarket(this.selSym);
-    const v = this.validator.validateLots(this.curLots, this.selSym);
-    if (!v.isValid) return this.toast('Set quantity', v.error, 'err');
-    const lots = v.value, lev = this.state.get().lev;
+  closePosition(sym) {
     try {
       if (!this.trading) throw new Error('Trading engine is not ready');
-      const { fill, qty } = this.trading.executeMarket({ symbol: this.selSym, side, lots, leverage: lev });
-      const shortName = this.config.SYM_META[this.selSym]?.short || this.selSym;
-      this.toast('Filled ✓', (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') + ' (' + this.fmtQty(qty) + ' ' + shortName + ') @ ' + this.fmtPrice(fill, m?.dec || 4), 'ok');
+      const { fill } = this.trading.close(sym);
+      const meta = this.market.getMarket(sym) || {};
+      this.toast('Closed', (this.config.SYM_META[sym]?.short || sym) + ' @ ' + this.fmtPrice(fill, meta.dec || 4), 'ok');
       this.markDirty();
       return true;
     } catch (e) {
-      this.toast('Order rejected', e.message, 'err');
-      return false;
-    }
-  }
-
-  applyFill(sym, side, price, qty, lev, fee, lots) {
-    try {
-      const result = this.financial.fill(sym, side, price, qty, lev, fee, lots, 'DIRECT_FILL');
-      this.state.flushSave();
-      return result;
-    } catch (e) {
-      this.toast('Order rejected', e.message, 'err');
+      this.toast('Close rejected', e.message, 'err');
       return false;
     }
   }
