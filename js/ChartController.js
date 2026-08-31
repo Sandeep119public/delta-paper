@@ -27,18 +27,4 @@ class ChartController {
  feedTick(price){const a=this.app;if(a.replay&&a.replay.active)return;if(!a._tvCandle||!(price>0))return;const now=Date.now(),bucket=Math.floor(now/1000/a._tfSec)*a._tfSec,m=a.market.getMarket(a.selSym),size=Number(m&&m.lastTradeSize),volume=Number.isFinite(size)&&size>0?size:1;let c=a._curCandle;if(!c||c.time!==bucket)c=a._curCandle={time:bucket,open:price,high:price,low:price,close:price,volume:0};c.high=Math.max(c.high,price);c.low=Math.min(c.low,price);c.close=price;c.volume=(c.volume||0)+volume;a._tvCandle.update(c);if(a._tvVol)a._tvVol.update({time:bucket,value:c.volume,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'});if(a.vwap)a.vwap.update(price,volume,Math.floor(now/1000));if(a.trading&&a.trading.mode!=='replay')try{a.trading.onPrice(a.selSym,Number(price));}catch(e){DELTA_LOGGER.error('[Trading] Trigger processing failed:',e);}}
 }
 global.ChartController=ChartController;
-// Legacy aliases removed from app ownership.
-(data,keepRange){this._historyCache=data.slice().sort((a,b)=>a.time-b.time);if(this._tvCandle)this._tvCandle.setData(this._historyCache);if(this._tvVol)this._tvVol.setData(this._historyCache.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));if(this.vwap)this.vwap.setData(this._historyCache);if(keepRange&&this._tvChart){try{this._tvChart.timeScale().setVisibleRange(keepRange);}catch(e){}}};
-DeltaPaperApp.prototype._loadCandles=async function(sym,tf){
- if(sym)this.selSym=sym;if(tf)this._tf=tf;this._tfSec=TF[this._tf]||60;this._curCandle=null;this._historyCache=[];this._loadingOlder=false;const request=++this._chartRequest,svc=this._chartData||global.chartDataService;if(!svc)return;
- const end=Date.now(),start=end-this._tfSec*500;
- try{const data=cleanRows(await svc.getCandles(this.selSym,this._tf,start,end));if(request!==this._chartRequest||!data.length)return;this._setChartData(data);const m=this.market.getMarket(this.selSym);const last=data[data.length-1];this._curCandle={...last};if(m&&m.price>0)this._feedTick(m.price);if(this._tvChart)this._tvChart.timeScale().scrollToRealTime();}
- catch(e){if(request===this._chartRequest)DELTA_LOGGER.warn('[Chart] historical load failed',e);}
-};
-DeltaPaperApp.prototype._loadOlder=async function(){const svc=this._chartData||global.chartDataService;if(!svc||!this._historyCache.length)return;this._loadingOlder=true;const oldRange=this._tvChart.timeScale().getVisibleRange(),first=this._historyCache[0].time*1000,span=this._tfSec*500;try{const older=cleanRows(await svc.getCandles(this.selSym,this._tf,Math.max(0,first-span),first-1));const map=new Map(this._historyCache.map(c=>[c.time,c]));older.forEach(c=>map.set(c.time,c));this._setChartData([...map.values()],oldRange);}catch(e){DELTA_LOGGER.warn('[Chart] older history failed',e);}finally{this._loadingOlder=false;}};
-DeltaPaperApp.prototype._feedTick=function(price){
- if(this.replay&&this.replay.active)return;if(!this._tvCandle||!(price>0))return;const now=Date.now(),bucket=Math.floor(now/1000/this._tfSec)*this._tfSec,m=this.market.getMarket(this.selSym),size=Number(m&&m.lastTradeSize),volume=Number.isFinite(size)&&size>0?size:1;let c=this._curCandle;
- if(!c||c.time!==bucket)c=this._curCandle={time:bucket,open:price,high:price,low:price,close:price,volume:0};
- c.high=Math.max(c.high,price);c.low=Math.min(c.low,price);c.close=price;c.volume=(c.volume||0)+volume;this._tvCandle.update(c);if(this._tvVol)this._tvVol.update({time:bucket,value:c.volume,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'});if(this.vwap)this.vwap.update(price,volume,Math.floor(now/1000));
-};
 })(window);
