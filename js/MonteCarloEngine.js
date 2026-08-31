@@ -1,172 +1,61 @@
 /**
- * Delta Paper Trading - Monte Carlo Stress Testing Engine
- * Runs 10,000 permutations of the trade sequence to distinguish
- * skill from luck. Calculates MAE, MFE, and max drawdown distributions.
+ * Monte Carlo sequence-sensitivity engine.
+ * IMPORTANT: shuffling realized trades tests path/sequence sensitivity, not strategy skill.
  */
-
 class MonteCarloEngine {
-  constructor(eventBus) {
-    this.events = eventBus;
-  }
+  constructor(eventBus) { this.events = eventBus; }
 
-  /**
-   * Run 10,000 permutations of the trade sequence to test for "lucky sequencing"
-   * @param {Array} trades - Array of trade PnL values (or objects with .pnl)
-   * @param {number} iterations - Number of shuffle permutations
-   * @param {number} startingBalance - Starting balance in USD
-   * @returns {Promise<Object>} Stress test results
-   */
   async runStressTest(trades, iterations = 10000, startingBalance = 10000) {
-    if (!trades || trades.length === 0) {
-      return { error: 'No trades to analyze' };
-    }
-
-    const tradePnls = trades.map(t => (typeof t === 'number' ? t : (t.pnl || 0)));
+    if (!trades || trades.length < 3) return { error: 'Need at least 3 trades to analyze' };
+    const tradePnls = trades.map(t => typeof t === 'number' ? t : Number(t.pnl || 0)).filter(Number.isFinite);
+    if (tradePnls.length < 3 || !(startingBalance > 0)) return { error: 'Invalid trade sample or starting balance' };
     const originalEquity = this._buildEquityCurve(tradePnls, startingBalance);
-
-    const distributions = { maes: [], mfes: [], drawdowns: [] };
-
-    // Fisher-Yates shuffle loop (chunked to avoid blocking the UI thread)
-    return new Promise((resolve) => {
+    const distributions = { drawdowns: [] };
+    return new Promise(resolve => {
       let i = 0;
       const processChunk = () => {
-        const end = Math.min(i + 500, iterations);
-        for (; i < end; i++) {
-          const shuffled = this._shuffle([...tradePnls]);
-          const equityCurve = this._buildEquityCurve(shuffled, startingBalance);
-
-          distributions.maes.push(this._calculateMAE(equityCurve));
-          distributions.mfes.push(this._calculateMFE(equityCurve));
-          distributions.drawdowns.push(this._calculateMaxDrawdown(equityCurve));
-        }
-
-        if (i < iterations) {
-          this.events.emit('montecarlo:progress', {
-            current: i,
-            total: iterations,
-            percent: (i / iterations) * 100
-          });
-          setTimeout(processChunk, 0);
-        } else {
-          resolve(this._analyzeDistributions(distributions, originalEquity, tradePnls, startingBalance));
-        }
+        const end = Math.min(i + 500, Math.max(1, Math.floor(iterations)));
+        for (; i < end; i++) distributions.drawdowns.push(this._calculateMaxDrawdown(this._buildEquityCurve(this._shuffle([...tradePnls]), startingBalance)));
+        if (i < iterations) { this.events.emit('montecarlo:progress', { current:i,total:iterations,percent:i/iterations*100 }); setTimeout(processChunk,0); }
+        else resolve(this._analyze(distributions, originalEquity, tradePnls, startingBalance));
       };
       processChunk();
     });
   }
 
-  /**
-   * Maximum Adverse Excursion: Largest peak-to-trough drop before recovery
-   */
-  _calculateMAE(equity) {
-    let maxEquity = equity[0], maxDrawdown = 0;
-    for (const val of equity) {
-      if (val > maxEquity) maxEquity = val;
-      maxDrawdown = Math.max(maxDrawdown, maxEquity - val);
-    }
-    return maxDrawdown;
-  }
-
-  /**
-   * Maximum Favorable Excursion: Largest trough-to-peak run
-   */
-  _calculateMFE(equity) {
-    let minEquity = equity[0], maxExcursion = 0;
-    for (const val of equity) {
-      if (val < minEquity) minEquity = val;
-      maxExcursion = Math.max(maxExcursion, val - minEquity);
-    }
-    return maxExcursion;
-  }
-
-  /**
-   * Calculate maximum drawdown as a percentage
-   */
-  _calculateMaxDrawdown(equity) {
-    let peak = equity[0], maxDD = 0;
-    for (const val of equity) {
-      if (val > peak) peak = val;
-      maxDD = Math.max(maxDD, (peak - val) / peak);
-    }
-    return maxDD * 100;
-  }
-
-  /**
-   * Analyze the Monte Carlo distributions and compute skill probability
-   */
-  _analyzeDistributions(distributions, originalEquity, tradePnls, startingBalance) {
-    const origMAE = this._calculateMAE(originalEquity);
-    const origMFE = this._calculateMFE(originalEquity);
-    const origMaxDD = this._calculateMaxDrawdown(originalEquity);
-
-    // Sort distributions for percentile calculations
-    const sortedMAE = [...distributions.maes].sort((a, b) => a - b);
-    const sortedMFE = [...distributions.mfes].sort((a, b) => a - b);
-    const sortedDD = [...distributions.drawdowns].sort((a, b) => a - b);
-
-    // P-Value: % of random permutations that had a WORSE MAE than the strategy
-    const maeExceededRate = distributions.maes.filter(m => m > origMAE).length / distributions.maes.length;
-
-    // Skill probability: > 0.95 indicates skill, < 0.05 indicates luck
-    const skillProbability = 1 - maeExceededRate;
-
-    // Final equity stats
-    const finalEquity = originalEquity[originalEquity.length - 1];
-    const totalReturn = ((finalEquity - startingBalance) / startingBalance) * 100;
-
-    // Calculate win streak and loss streak from original trades
-    let maxWinStreak = 0, maxLossStreak = 0, currentStreak = 0, streakType = null;
-    for (const pnl of tradePnls) {
-      if (pnl > 0) {
-        if (streakType === 'win') currentStreak++;
-        else { currentStreak = 1; streakType = 'win'; }
-        maxWinStreak = Math.max(maxWinStreak, currentStreak);
-      } else if (pnl < 0) {
-        if (streakType === 'loss') currentStreak++;
-        else { currentStreak = 1; streakType = 'loss'; }
-        maxLossStreak = Math.max(maxLossStreak, currentStreak);
-      }
-    }
-
+  _analyze(d, originalEquity, pnls, start) {
+    const originalDD=this._calculateMaxDrawdown(originalEquity), sorted=[...d.drawdowns].sort((a,b)=>a-b);
+    // One-sided permutation p-value: probability that a random ordering is at least as bad.
+    const worse=d.drawdowns.filter(x=>x>=originalDD).length;
+    const permutationPValue=(worse+1)/(d.drawdowns.length+1);
+    const finalEquity=originalEquity[originalEquity.length-1], totalReturn=(finalEquity-start)/start*100;
+    let maxWinStreak=0,maxLossStreak=0,cur=0,type=null;
+    for(const p of pnls){if(p>0){cur=type==='w'?cur+1:1;type='w';maxWinStreak=Math.max(maxWinStreak,cur);}else if(p<0){cur=type==='l'?cur+1:1;type='l';maxLossStreak=Math.max(maxLossStreak,cur);}}
+    const robustness=1-permutationPValue;
     return {
-      originalMAE: origMAE,
-      originalMFE: origMFE,
-      originalMaxDrawdown: origMaxDD,
-      totalReturn,
-      finalEquity,
-      totalTrades: tradePnls.length,
-      winningTrades: tradePnls.filter(p => p > 0).length,
-      losingTrades: tradePnls.filter(p => p < 0).length,
-      maxWinStreak,
-      maxLossStreak,
-      skillProbability,
-      percentileMAE: sortedMAE[Math.floor(sortedMAE.length * 0.95)],
-      percentileMFE: sortedMFE[Math.floor(sortedMFE.length * 0.95)],
-      percentileMaxDrawdown: sortedDD[Math.floor(sortedDD.length * 0.95)],
-      meanMAE: sortedMAE.reduce((a, b) => a + b, 0) / sortedMAE.length,
-      meanMFE: sortedMFE.reduce((a, b) => a + b, 0) / sortedMFE.length,
-      meanMaxDrawdown: sortedDD.reduce((a, b) => a + b, 0) / sortedDD.length,
-      medianMAE: sortedMAE[Math.floor(sortedMAE.length * 0.5)],
-      iterations: distributions.maes.length,
-      verdict: skillProbability > 0.95
-        ? 'Strong skill signal — strategy outperforms 95%+ of random sequences'
-        : skillProbability > 0.80
-        ? 'Moderate skill — likely some edge, but not statistically conclusive'
-        : skillProbability > 0.50
-        ? 'Weak signal — performance may be partly due to favorable sequencing'
-        : 'Luck-dominated — returns are indistinguishable from random trade ordering'
+      originalMAE: originalDD,
+      originalMFE: null,
+      originalMaxDrawdown: originalDD,
+      sequenceMaxDrawdown: originalDD,
+      totalReturn, finalEquity, totalTrades:pnls.length,
+      winningTrades:pnls.filter(p=>p>0).length, losingTrades:pnls.filter(p=>p<0).length,
+      maxWinStreak,maxLossStreak,
+      permutationPValue, sequenceRobustness: robustness,
+      // Backward-compatible field. It is NOT probability of skill.
+      skillProbability: robustness,
+      percentileMAE: this._percentile(sorted,.95), percentileMFE:null, percentileMaxDrawdown:this._percentile(sorted,.95),
+      meanMAE:this._mean(sorted), meanMFE:null, meanMaxDrawdown:this._mean(sorted), medianMAE:this._percentile(sorted,.5), iterations:d.drawdowns.length,
+      verdict: permutationPValue <= .05
+        ? 'Unusual trade ordering: observed drawdown is better than most random permutations. This is sequencing evidence, not proof of skill.'
+        : permutationPValue <= .20
+        ? 'Some sequencing sensitivity detected. This test does not establish strategy skill.'
+        : 'Observed drawdown is common under random trade ordering. No sequencing evidence of unusual performance.'
     };
   }
 
-  _shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-  }
-
-  _buildEquityCurve(pnls, start) {
-    return pnls.reduce((acc, pnl) => [...acc, acc[acc.length - 1] + pnl], [start]);
-  }
+  _percentile(a,p){return a.length?a[Math.min(a.length-1,Math.floor((a.length-1)*p))]:0;}
+  _mean(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0;}
+  _calculateMaxDrawdown(equity){let peak=equity[0],dd=0;for(const v of equity){if(v>peak)peak=v;if(peak>0)dd=Math.max(dd,(peak-v)/peak*100);}return dd;}
+  _shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+  _buildEquityCurve(pnls,start){const out=[start];for(const p of pnls)out.push(out[out.length-1]+p);return out;}
 }
