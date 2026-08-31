@@ -144,6 +144,7 @@ class AppState {
    */
   reset() {
     this.state = this.createDefault();
+    this._dirty = true;
     this.flushSave();
     this.notifyListeners();
     DELTA_LOGGER.log('[State] Reset to defaults');
