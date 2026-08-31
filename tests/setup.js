@@ -1,39 +1,26 @@
-/**
- * Delta Paper Trading - Test Setup
- * Loads globals and mocks for vitest tests
- */
+import fs from 'node:fs';
+import vm from 'node:vm';
 
-// Load configuration
-import '../js/config.js';
-import '../js/console.js';
-
-// Mock browser globals
-if (typeof globalThis.localStorage === 'undefined') {
-  globalThis.localStorage = {
-    store: {},
-    getItem(key) { return this.store[key] || null; },
-    setItem(key, value) { this.store[key] = String(value); },
-    removeItem(key) { delete this.store[key]; },
-    clear() { this.store = {}; }
-  };
+function loadLegacyScript(path, expose) {
+  let source = fs.readFileSync(new URL(path, import.meta.url), 'utf8');
+  if (expose) source += `\nglobalThis.${expose} = typeof ${expose} !== 'undefined' ? ${expose} : globalThis.${expose};`;
+  vm.runInThisContext(source, { filename: path });
 }
 
-if (typeof globalThis.requestAnimationFrame === 'undefined') {
-  globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
-}
+loadLegacyScript('../js/config.js', 'DELTA_CONFIG');
+loadLegacyScript('../js/console.js', 'DELTA_LOGGER');
+loadLegacyScript('../js/validator.js', 'InputValidator');
+loadLegacyScript('../js/state.js', 'AppState');
 
-if (typeof globalThis.WebSocket === 'undefined') {
-  globalThis.WebSocket = function() {
-    this.readyState = 0;
-    this.send = () => {};
-    this.close = () => {};
-  };
-}
+globalThis.localStorage = {
+  store: {},
+  getItem(key) { return this.store[key] || null; },
+  setItem(key, value) { this.store[key] = String(value); },
+  removeItem(key) { delete this.store[key]; },
+  clear() { this.store = {}; }
+};
 
-if (typeof globalThis.fetch === 'undefined') {
-  globalThis.fetch = () => Promise.resolve({ ok: false, json: () => ({}) });
-}
-
-if (typeof globalThis.confirm === 'undefined') {
-  globalThis.confirm = () => true;
-}
+globalThis.requestAnimationFrame ??= (cb) => setTimeout(cb, 0);
+globalThis.WebSocket ??= function() { this.readyState = 0; this.send = () => {}; this.close = () => {}; };
+globalThis.fetch ??= () => Promise.resolve({ ok: false, json: () => ({}) });
+globalThis.confirm ??= () => true;
