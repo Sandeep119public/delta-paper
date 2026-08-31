@@ -650,139 +650,31 @@ class DeltaPaperApp {
 
   placeOrder(side) {
     const m = this.market.getMarket(this.selSym);
-    if (!m) return;
-
-    if (!(m.price > 0)) {
-      return this.toast('No live price yet', 'Waiting for Delta India feed…', 'err');
-    }
-
     const v = this.validator.validateLots(this.curLots, this.selSym);
     if (!v.isValid) return this.toast('Set quantity', v.error, 'err');
-    const lots = v.value;
-
-    const S = this.state.get();
-    const lev = S.lev;
-    const lot = this.lotOf(this.selSym);
-    const qty = lots * lot;
-    const fill = side === 1 ? m.price * 1.0003 : m.price * 0.9997;
-    const notional = qty * fill;
-    const margin = notional / lev;
-    const fee = notional * this.config.TAKER_FEE;
-
-    if (margin + fee > S.usd) {
-      return this.toast('Insufficient USD', 'Need ' + this.fmtUsd(margin + fee) + ' $ — ☰ → Funds', 'err');
-    }
-
-    if (this.applyFill(this.selSym, side, fill, qty, lev, fee, lots)) {
-      const shortName = this.config.SYM_META[this.selSym] ? this.config.SYM_META[this.selSym].short : this.selSym;
-      this.toast(
-        'Filled ✓',
-        (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') +
-        ' (' + this.fmtQty(qty) + ' ' + shortName + ') @ ' + this.fmtPrice(fill, m.dec),
-        'ok'
-      );
-      this.flushSave(true);
+    const lots = v.value, lev = this.state.get().lev;
+    try {
+      if (!this.trading) throw new Error('Trading engine is not ready');
+      const { fill, qty } = this.trading.executeMarket({ symbol: this.selSym, side, lots, leverage: lev });
+      const shortName = this.config.SYM_META[this.selSym]?.short || this.selSym;
+      this.toast('Filled ✓', (side === 1 ? 'Long' : 'Short') + ' ' + lots + ' lot' + (lots > 1 ? 's' : '') + ' (' + this.fmtQty(qty) + ' ' + shortName + ') @ ' + this.fmtPrice(fill, m?.dec || 4), 'ok');
       this.markDirty();
+      return true;
+    } catch (e) {
+      this.toast('Order rejected', e.message, 'err');
+      return false;
     }
   }
 
   applyFill(sym, side, price, qty, lev, fee, lots) {
-    const S = this.state.get();
-    let usd = S.usd;
-    let feesTotal = S.feesTotal;
-
-    usd -= fee;
-    feesTotal += fee;
-
-    const positions = { ...S.positions };
-    const pos = positions[sym];
-
-    if (!pos) {
-      const margin = price * qty / lev;
-      if (usd < margin) {
-        usd += fee; feesTotal -= fee;
-        this.toast('Rejected', 'Insufficient USD margin', 'err');
-        return false;
-      }
-      usd -= margin;
-      positions[sym] = { sym, dir: side, lots, qty, entry: price, margin, lev, tp: 0, sl: 0 };
-      this.pushHist(sym, side === 1 ? 'Open Long' : 'Open Short', qty, price, -fee);
-      this.state.update({ usd, feesTotal, positions });
-      return true;
+    try {
+      const result = this.financial.fill(sym, side, price, qty, lev, fee, lots, 'DIRECT_FILL');
+      this.state.flushSave();
+      return result;
+    } catch (e) {
+      this.toast('Order rejected', e.message, 'err');
+      return false;
     }
-
-    if (side === pos.dir) {
-      const addM = price * qty / lev;
-      if (usd < addM) {
-        usd += fee; feesTotal -= fee;
-        this.toast('Rejected', 'Insufficient USD margin', 'err');
-        return false;
-      }
-      usd -= addM;
-      const nq = pos.qty + qty;
-      const entry = (pos.entry * pos.qty + price * qty) / nq;
-      const newMargin = pos.margin + addM;
-      const newLev = Math.max(1, (entry * nq) / newMargin);
-
-      positions[sym] = {
-        ...pos,
-        qty: nq,
-        entry,
-        lots: pos.lots + lots,
-        margin: newMargin,
-        lev: newLev
-      };
-      this.pushHist(sym, side === 1 ? 'Add Long' : 'Add Short', qty, price, -fee);
-      this.state.update({ usd, feesTotal, positions });
-      return true;
-    }
-
-    const closeQty = Math.min(qty, pos.qty);
-    const ratio = closeQty / pos.qty;
-    const realized = (price - pos.entry) * closeQty * pos.dir;
-    const mRel = pos.margin * ratio;
-
-    usd += mRel + realized;
-
-    const remainingQty = pos.qty - closeQty;
-    const remainingMargin = pos.margin - mRel;
-    const remainingLots = Math.max(0, pos.lots - Math.round(pos.lots * ratio));
-
-    const net = realized - fee;
-    this.recordClose(net);
-    this.pushHist(sym, pos.dir === 1 ? 'Close Long' : 'Close Short', closeQty, price, net);
-
-    let finalPositions = positions;
-    if (remainingQty < 1e-9) {
-      delete finalPositions[sym];
-    } else {
-      finalPositions[sym] = {
-        ...pos,
-        qty: remainingQty,
-        margin: remainingMargin,
-        lots: remainingLots
-      };
-    }
-
-    const remaining = qty - closeQty;
-    if (remaining > 1e-9) {
-      const margin = price * remaining / lev;
-      if (usd >= margin) {
-        usd -= margin;
-        finalPositions[sym] = {
-          sym, dir: side,
-          lots: Math.max(1, remainingLots),
-          qty: remaining,
-          entry: price,
-          margin, lev,
-          tp: 0, sl: 0
-        };
-        this.pushHist(sym, side === 1 ? 'Flip Long' : 'Flip Short', remaining, price, 0);
-      }
-    }
-
-    this.state.update({ usd, feesTotal, positions: finalPositions });
-    return true;
   }
 
   closeAll() {
