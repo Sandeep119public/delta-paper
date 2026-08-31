@@ -72,4 +72,14 @@ describe('FinancialEngine', () => {
     expect(f.raw.positions.BTCUSD).toBeUndefined();
     expect(engine.accountSnapshot().equityUsd).toBeCloseTo(899.8, 6);
   });
+  it('liquidation at the calculated threshold is economically consistent', () => {
+    engine.open('BTCUSD', 1, 100, 2, 2);
+    const pos = f.raw.positions.BTCUSD;
+    const liq = engine.liquidationPrice(pos);
+    const trade = engine.liquidate('BTCUSD', liq);
+    expect(trade.exitPrice).toBeCloseTo(liq, 6);
+    expect(trade.pnl).toBeCloseTo(engine.pnl(pos, liq), 6);
+    expect(engine.accountSnapshot().lockedMarginUsd).toBe(0);
+  });
+
 });
