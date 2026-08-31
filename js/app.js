@@ -270,6 +270,11 @@ class DeltaPaperApp {
       }
     }
     if (this.vwap) this.vwap.update(price, 1, Math.floor(Date.now() / 1000));
+    // Single live price path: chart + execution triggers observe the same tick.
+    if (this.trading && this.trading.mode !== 'replay') {
+      try { this.trading.onPrice(this.selSym, Number(price)); }
+      catch (e) { DELTA_LOGGER.error('[Trading] Trigger processing failed:', e); }
+    }
   }
 
   _updateTpSlLines(m) {
