@@ -18,7 +18,8 @@ class ChartReplay {
       });
     }
     if(!a._historyCache || a._historyCache.length<20) throw new Error('Not enough candle history yet. Wait for the chart to load and try again.');
-    this.source=a._historyCache.slice().sort((x,y)=>Number(x.time)-Number(y.time));
+    this.source=a._historyCache.slice().filter(c=>Number.isFinite(Number(c.time))&&Number.isFinite(Number(c.open))&&Number.isFinite(Number(c.high))&&Number.isFinite(Number(c.low))&&Number.isFinite(Number(c.close))&&Number(c.high)>=Number(c.low)&&Number(c.open)>0&&Number(c.close)>0).sort((x,y)=>Number(x.time)-Number(y.time));
+    if(this.source.length<20) throw new Error('Historical data contains too few valid candles for replay.');
     this.index=Math.max(19,Math.min(this.source.length-2,Math.floor(this.source.length*.70)));
     this.active=true; this.playing=false; this.startedAt=Date.now();
     if(a.trading){a.trading.enterReplay(); const cur=this.source[this.index]; a.trading.setReplayPrice(a.selSym, Number(cur.close), Number(cur.time));}
@@ -55,7 +56,7 @@ class ChartReplay {
     const a=this.app;
     this.active=false;
     if(a._historyCache && a._historyCache.length && a._setChartData) a._setChartData(a._historyCache);
-    this.source=[]; this.ui(); this._status('');
+    this.source=[]; if(a.trading)a.trading.clearReplay(); this.ui(); this._status('');
   }
   setSpeed(v){this.speed=Math.max(1,Math.min(50,Number(v)||1));if(this.playing)this._status('Playing • '+this.speed+'x');}
   _status(text){const el=this.app.$('replayStatus');if(el)el.textContent=text;}
