@@ -47,7 +47,8 @@
     "typeRoots": [
       "./types",
       "./node_modules/@types"
-    ]
+    ],
+    "rewriteRelativeImportExtensions": true
   },
   "include": [
     "js/**/*",
