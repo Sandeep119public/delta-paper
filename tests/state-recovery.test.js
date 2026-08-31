@@ -1,0 +1,5 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs'; import vm from 'node:vm';
+function AppState(){const ctx=vm.createContext({window:{},Date,Math,Number,Error,JSON,localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},setTimeout,clearTimeout,DELTA_LOGGER:{warn:()=>{},log:()=>{},error:()=>{}}});vm.runInContext(fs.readFileSync(new URL('../js/state.js',import.meta.url),'utf8'),ctx);return ctx.AppState||ctx.window.AppState;}
+const cfg={START_INR:1000,STORE_KEY:'x',MAX_LEVERAGE:20,VALIDATION:{MIN_BALANCE:0,MAX_DECIMALS:8,MIN_LOTS:1,MAX_LOTS:100}};
+describe('state recovery',()=>{it('falls back to a valid storage copy when the newer copy is malformed',async()=>{const S=AppState();const storage={db:{},get:async()=>({stateVersion:9,inr:-1,positions:null,lots:null})};const s=new S(cfg,storage);await s.load();expect(s.get().inr).toBe(1000);expect(s.get().positions).toEqual({});});});
