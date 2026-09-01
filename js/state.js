@@ -51,8 +51,8 @@ class AppState {
     if (!s || typeof s !== 'object' || Array.isArray(s)) return false;
     if (typeof s.inr !== 'number' || !Number.isFinite(s.inr) || s.inr < 0) return false;
     if (s.usd !== undefined && (typeof s.usd !== 'number' || !Number.isFinite(s.usd) || s.usd < 0)) return false;
-    if (s.positions === null || (s.positions !== undefined && (typeof s.positions !== 'object' || Array.isArray(s.positions)))) return false;
-    if (s.lots === null || (s.lots !== undefined && (typeof s.lots !== 'object' || Array.isArray(s.lots)))) return false;
+    if (!Object.prototype.hasOwnProperty.call(s, 'positions') || !s.positions || typeof s.positions !== 'object' || Array.isArray(s.positions)) return false;
+    if (!Object.prototype.hasOwnProperty.call(s, 'lots') || !s.lots || typeof s.lots !== 'object' || Array.isArray(s.lots)) return false;
     if (s.history !== undefined && !Array.isArray(s.history)) return false;
     if (s.ledger !== undefined && !Array.isArray(s.ledger)) return false;
     return true;
