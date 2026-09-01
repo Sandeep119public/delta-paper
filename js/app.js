@@ -40,7 +40,6 @@ class DeltaPaperApp {
 
     // Visualization modules (initialized in _initChart)
     this.vwap = null;
-    this.heatmap = null;
 
     this.init = this.init.bind(this);
     this.renderAll = this.renderAll.bind(this);
@@ -830,8 +829,6 @@ class DeltaPaperApp {
   startSimulationLoop() {
     setInterval(() => {
       this._checkTradingTriggers();
-      // Refresh liquidation heatmap (reads positions, redraws canvas)
-      if (this.heatmap) this.heatmap.refresh();
       this.markDirty();
     }, 1000);
   }
