@@ -29,12 +29,13 @@ class ChartController {
  }
  _bindReplay(){const a=this.app,rb=a.$('replayBtn'),rp=a.$('replayPlay'),rs=a.$('replayStop'),rz=a.$('replaySpeed');rb&&rb.addEventListener('click',async()=>{try{rb.disabled=true;if(!a.replay.active)await a.replay.start();else a.replay.stop();}catch(e){a.toast('Replay unavailable',e.message,'err');}finally{rb.disabled=false;}});rp&&rp.addEventListener('click',()=>a.replay.playing?a.replay.pause():a.replay.play());rs&&rs.addEventListener('click',()=>a.replay.stop());rz&&rz.addEventListener('change',()=>a.replay.setSpeed(rz.value));}
  setData(data,keepRange){const a=this.app;a._historyCache=data.slice().sort((x,y)=>x.time-y.time);if(a._tvCandle)a._tvCandle.setData(a._historyCache);if(a._tvVol)a._tvVol.setData(a._historyCache.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));if(a.vwap)a.vwap.setData(a._historyCache);if(keepRange&&a._tvChart){try{a._tvChart.timeScale().setVisibleRange(keepRange);}catch(e){}}}
- load=async function(sym,tf){const a=this.app;if(sym)a.selSym=sym;if(tf)a._tf=tf;a._tfSec=TF[a._tf]||60;a._curCandle=null;a._historyCache=[];a._loadingOlder=false;const request=++a._chartRequest,svc=a._chartData||global.chartDataService;if(!svc)return;const end=Date.now(),start=end-a._tfSec*800;
+ load=async function(sym,tf){const a=this.app;if(sym)a.selSym=sym;if(tf)a._tf=tf;a._tfSec=TF[a._tf]||60;a._curCandle=null;a._historyCache=[];a._chartHistoryReady=false;a._loadingOlder=false;const request=++a._chartRequest,svc=a._chartData||global.chartDataService;if(!svc)return;const end=Date.now(),start=end-a._tfSec*800;
  try{
    const data=cleanRows(await svc.getCandles(a.selSym,a._tf,start,end));
    if(request!==a._chartRequest)return;
    if(data.length<20)throw new Error('Only '+data.length+' valid candles received');
    this.setData(data);
+   a._chartHistoryReady=true;
    const m=a.market.getMarket(a.selSym),last=data[data.length-1];
    a._curCandle={...last};
    if(m&&m.price>0)this.feedTick(m.price);
@@ -50,7 +51,7 @@ class ChartController {
    }
  }};
  loadOlder=async function(){const a=this.app,svc=a._chartData||global.chartDataService;if(!svc||!a._historyCache.length)return;a._loadingOlder=true;const oldRange=a._tvChart.timeScale().getVisibleRange(),first=a._historyCache[0].time*1000,span=a._tfSec*500;try{const older=cleanRows(await svc.getCandles(a.selSym,a._tf,Math.max(0,first-span),first-1));const map=new Map(a._historyCache.map(c=>[c.time,c]));older.forEach(c=>map.set(c.time,c));this.setData([...map.values()],oldRange);}catch(e){DELTA_LOGGER.warn('[Chart] older history failed',e);}finally{a._loadingOlder=false;}};
- feedTick(price){const a=this.app;if(a.replay&&a.replay.active)return;if(!a._tvCandle||!(price>0))return;const now=Date.now(),bucket=Math.floor(now/1000/a._tfSec)*a._tfSec,m=a.market.getMarket(a.selSym),size=Number(m&&m.lastTradeSize),volume=Number.isFinite(size)&&size>0?size:1;let c=a._curCandle;if(!c||c.time!==bucket)c=a._curCandle={time:bucket,open:price,high:price,low:price,close:price,volume:0};c.high=Math.max(c.high,price);c.low=Math.min(c.low,price);c.close=price;c.volume=(c.volume||0)+volume;a._tvCandle.update(c);if(a._tvVol)a._tvVol.update({time:bucket,value:c.volume,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'});if(a.vwap)a.vwap.update(price,volume,Math.floor(now/1000));if(a.trading&&a.trading.mode!=='replay')try{a.trading.onPrice(a.selSym,Number(price));}catch(e){DELTA_LOGGER.error('[Trading] Trigger processing failed:',e);}}
+ feedTick(price){const a=this.app;if(a.replay&&a.replay.active)return;if(!a._chartHistoryReady||!a._tvCandle||!(price>0))return;const now=Date.now(),bucket=Math.floor(now/1000/a._tfSec)*a._tfSec,m=a.market.getMarket(a.selSym),size=Number(m&&m.lastTradeSize),volume=Number.isFinite(size)&&size>0?size:1;let c=a._curCandle;if(!c||c.time!==bucket)c=a._curCandle={time:bucket,open:price,high:price,low:price,close:price,volume:0};c.high=Math.max(c.high,price);c.low=Math.min(c.low,price);c.close=price;c.volume=(c.volume||0)+volume;a._tvCandle.update(c);if(a._tvVol)a._tvVol.update({time:bucket,value:c.volume,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'});if(a.vwap)a.vwap.update(price,volume,Math.floor(now/1000));if(a.trading&&a.trading.mode!=='replay')try{a.trading.onPrice(a.selSym,Number(price));}catch(e){DELTA_LOGGER.error('[Trading] Trigger processing failed:',e);}}
 }
 global.ChartController=ChartController;
 })(window);
