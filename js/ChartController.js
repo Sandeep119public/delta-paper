@@ -28,7 +28,14 @@ class ChartController {
  app._tvChart.timeScale().subscribeVisibleLogicalRangeChange(range=>{if(range&&range.from<80&&!app._loadingOlder&&app._historyCache.length)this.loadOlder();});
  }
  _bindReplay(){const a=this.app,rb=a.$('replayBtn'),rp=a.$('replayPlay'),rs=a.$('replayStop'),rz=a.$('replaySpeed');rb&&rb.addEventListener('click',async()=>{try{rb.disabled=true;if(!a.replay.active)await a.replay.start();else a.replay.stop();}catch(e){a.toast('Replay unavailable',e.message,'err');}finally{rb.disabled=false;}});rp&&rp.addEventListener('click',()=>a.replay.playing?a.replay.pause():a.replay.play());rs&&rs.addEventListener('click',()=>a.replay.stop());rz&&rz.addEventListener('change',()=>a.replay.setSpeed(rz.value));}
- setData(data,keepRange){const a=this.app;a._historyCache=data.slice().sort((x,y)=>x.time-y.time);if(a._tvCandle)a._tvCandle.setData(a._historyCache);if(a._tvVol)a._tvVol.setData(a._historyCache.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));if(a.vwap)a.vwap.setData(a._historyCache);if(keepRange&&a._tvChart){try{a._tvChart.timeScale().setVisibleRange(keepRange);}catch(e){}}}
+ setData(data,keepRange){
+ const a=this.app,rows=cleanRows(data);
+ a._historyCache=rows;
+ if(a._tvCandle)a._tvCandle.setData(rows);
+ if(a._tvVol)a._tvVol.setData(rows.map(c=>({time:c.time,value:c.volume||0,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'})));
+ if(a.vwap&&a.vwap.enabled)a.vwap.setData(rows);
+ if(keepRange&&a._tvChart){try{a._tvChart.timeScale().setVisibleRange(keepRange);}catch(e){}}
+}
  load=async function(sym,tf){const a=this.app;if(sym)a.selSym=sym;if(tf)a._tf=tf;a._tfSec=TF[a._tf]||60;a._curCandle=null;a._historyCache=[];a._chartHistoryReady=false;a._loadingOlder=false;const request=++a._chartRequest,svc=a._chartData||global.chartDataService;if(!svc)return;const end=Date.now(),start=end-a._tfSec*800;
  try{
    const data=cleanRows(await svc.getCandles(a.selSym,a._tf,start,end));
