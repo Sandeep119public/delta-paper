@@ -157,24 +157,6 @@ class DeltaPaperApp {
       }
     } catch (e) { DELTA_LOGGER.warn('[App] VWAP init failed', e); }
 
-    // Liquidation heatmap overlay
-    try {
-      const hmCanvas = this.$('heatmapCanvas');
-      if (hmCanvas) {
-        this.heatmap = new LiquidationHeatmap(
-          this._tvChart, this._tvCandle, hmCanvas, this.config, this.state,
-          window.simulationEngine || null
-        );
-        const hmBtn = this.$('heatmapToggle');
-        if (hmBtn) {
-          hmBtn.addEventListener('click', () => {
-            const on = hmBtn.classList.toggle('on');
-            this.heatmap.toggle(on);
-          });
-        }
-      }
-    } catch (e) { DELTA_LOGGER.warn('[App] Heatmap init failed', e); }
-  }
 
   _updateTpSlLines(m) {
     if (!this._tvCandle) return;
@@ -535,7 +517,7 @@ class DeltaPaperApp {
     t.appendChild(symText);
 
     this.$('pdEntry').textContent = this.fmtPrice(pos.entry, m.dec);
-    this.$('pdQty').textContent  = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' ΓÇó ' + this.fmtQty(pos.qty);
+    this.$('pdQty').textContent  = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
     this.$('pdMargin').textContent = this.fmtUsd(pos.margin) + ' $';
     this.$('pdLiq').textContent    = this.fmtPrice(this.financial.liquidationPrice(pos), m.dec);
 
@@ -560,7 +542,7 @@ class DeltaPaperApp {
     const m = this.market.getMarket(this.posDetailSym);
     const up = (m.price - pos.entry) * pos.qty * pos.dir;
 
-    this.$('pdMark').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : 'ΓÇª';
+    this.$('pdMark').textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
     this.$('pdUpnl').textContent = this.fmtSign(up) + ' $';
     this.$('pdUpnl').className = up >= 0 ? 'pos' : 'neg';
   }
@@ -577,7 +559,7 @@ class DeltaPaperApp {
     const hasSl = isFinite(slRaw) && slRaw > 0;
     const mark  = m.price;
 
-    if (!(mark > 0)) return this.toast('No live price', 'Waiting for feedΓÇª', 'err');
+    if (!(mark > 0)) return this.toast('No live price', 'Waiting for feed…', 'err');
 
     if (hasTp) {
       if ((pos.dir === 1 && tpRaw <= mark) || (pos.dir === -1 && tpRaw >= mark)) {
@@ -604,7 +586,7 @@ class DeltaPaperApp {
     this.flushSave(true);
 
     const txt = (pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
-      (pos.tp && pos.sl ? ' ΓÇó ' : '') +
+      (pos.tp && pos.sl ? ' • ' : '') +
       (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : '');
 
     this.toast('Saved Γ£ô', txt || 'TP/SL cleared', 'ok');
@@ -654,13 +636,13 @@ class DeltaPaperApp {
     const amt = v.value;
 
     this.state.update({ inr: S.inr - amt });
-    this.ledgerPush('Withdraw', 'HDFC ΓÇóΓÇó1234', -amt, 0);
+    this.ledgerPush('Withdraw', 'HDFC ••1234', -amt, 0);
     this.sampleEq();
     this.flushSave(true);
     this.renderFunds();
     this.markDirty();
 
-    this.toast('Withdrawal Γ£ô', this.fmtInr(amt) + ' sent to HDFC ΓÇóΓÇó1234', 'ok');
+    this.toast('Withdrawal Γ£ô', this.fmtInr(amt) + ' sent to HDFC ••1234', 'ok');
     this.closeModal('wdOverlay');
     this.$('wdAmt').value = '';
   }
@@ -675,8 +657,8 @@ class DeltaPaperApp {
     const i2u = this.cvtDir === 'i2u';
     const S = this.state.get();
 
-    this.$('cvtFromL').textContent = i2u ? 'Γé╣ INR' : 'USD';
-    this.$('cvtToL').textContent   = i2u ? 'USD' : 'Γé╣ INR';
+    this.$('cvtFromL').textContent = i2u ? '₹ INR' : 'USD';
+    this.$('cvtToL').textContent   = i2u ? 'USD' : '₹ INR';
     this.$('cvtCur').textContent   = i2u ? 'INR' : 'USD';
     this.$('cvtAvail').textContent = i2u ? this.fmtInr(S.inr) : this.fmtUsd(S.usd) + ' USD';
 
@@ -688,7 +670,7 @@ class DeltaPaperApp {
     const rate = this.state.rate || this.config.BASE_RATE;
     const i2u  = this.cvtDir === 'i2u';
 
-    this.$('cvtRate').textContent = '1 USD = Γé╣' + rate.toFixed(2);
+    this.$('cvtRate').textContent = '1 USD = ₹' + rate.toFixed(2);
 
     let recv = 0, fee = 0;
     if (amt > 0) {
@@ -704,7 +686,7 @@ class DeltaPaperApp {
     this.$('cvtFee').textContent = i2u ? this.fmtInr(fee) : this.fmtUsd(fee) + ' USD';
     this.$('cvtRecv').textContent = recv > 0
       ? (i2u ? this.fmtUsd(recv) + ' USD' : this.fmtInr(recv))
-      : 'ΓÇö';
+      : '—';
   }
 
   doConvert() {
@@ -809,8 +791,8 @@ class DeltaPaperApp {
   fmtUsd(x)    { return this._fmtCommas(x); }
   fmtUsd0(x)   { return this._fmtCommas0(x); }
   fmtSign(x)   { return (x >= 0 ? '+' : '') + this._fmtCommas(x); }
-  fmtInr(x)    { return 'Γé╣' + this._fmtCommas0(x); }
-  fmtInrS(x)   { return (x >= 0 ? '+' : '-') + 'Γé╣' + this._fmtCommas0(Math.abs(x)); }
+  fmtInr(x)    { return '₹' + this._fmtCommas0(x); }
+  fmtInrS(x)   { return (x >= 0 ? '+' : '-') + '₹' + this._fmtCommas0(Math.abs(x)); }
   fmtPrice(p, d){ return this._fmtCommasDec(p, d); }
   fmtPxShort(p){ if (p >= 1000) return (p/1000).toFixed(2)+'k'; if (p >= 1) return p.toFixed(2); return p.toFixed(4); }
   fmtQty(q)    { let s = q.toFixed(6); return s.replace(/0+$/, '').replace(/\.$/, ''); }
@@ -878,7 +860,7 @@ class DeltaPaperApp {
     if (this.$('cvtOverlay') && this.$('cvtOverlay').classList.contains('show')) this.renderCvtPreview();
   }
 
-  /** NEW: drive the header chip ("SYNCΓÇª"/"LIVE"/"REST"/"SIM") and the
+  /** NEW: drive the header chip ("SYNC…"/"LIVE"/"REST"/"SIM") and the
    *  market-panel feed badge from live market-data state. Inline colors
    *  are applied so it works regardless of styles.css coverage. */
   renderStatus() {
@@ -890,7 +872,7 @@ class DeltaPaperApp {
     if (live)                 { label = 'LIVE';   cls = 'live'; color = '#22c55e'; }
     else if (src === 'rest')  { label = 'REST';   cls = 'rest'; color = '#f59e0b'; }
     else if (src === 'sim')   { label = 'SIM';    cls = 'sim';  color = '#a78bfa'; }
-    else                      { label = 'SYNCΓÇª';  cls = 'boot'; color = '#94a3b8'; }
+    else                      { label = 'SYNC…';  cls = 'boot'; color = '#94a3b8'; }
 
     const apply = (dotId, textId) => {
       const d = this.$(dotId);
@@ -924,7 +906,7 @@ class DeltaPaperApp {
         const b = document.createElement('button');
         b.className = 'sym-btn';
         b.dataset.sym = sym;
-        b.innerHTML = '<span class="sym-name">' + this.config.SYM_META[sym].short + '</span><span class="price mono">ΓÇª</span>';
+        b.innerHTML = '<span class="sym-name">' + this.config.SYM_META[sym].short + '</span><span class="price mono">…</span>';
         b.addEventListener('click', () => this.switchSymbol(sym));
         wrap.appendChild(b);
       });
@@ -940,13 +922,13 @@ class DeltaPaperApp {
     const m = this.market.getMarket(this.selSym);
     if (!m) return;
 
-    this.$('mktTitle').textContent = m.symbol + ' ΓÇó PERP';
-    if (this.$('chartTitle')) this.$('chartTitle').textContent = m.symbol + ' ΓÇó ' + (this._tf || '1m');
+    this.$('mktTitle').textContent = m.symbol + ' • PERP';
+    if (this.$('chartTitle')) this.$('chartTitle').textContent = m.symbol + ' • ' + (this._tf || '1m');
     this.$('lotLabel').textContent = '1 lot = ' + this.fmtLot(m.lot) + ' ' + this.config.SYM_META[this.selSym].short;
 
     const priceEl = this.$('psPrice');
     const oldPrice = this._prevPrice[this.selSym] || 0;
-    priceEl.textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : 'ΓÇª';
+    priceEl.textContent = m.price > 0 ? this.fmtPrice(m.price, m.dec) : '…';
     priceEl.className = 'ps-price mono ' + (m.price >= (m.prevPrice || m.price) ? 'pos' : 'neg');
 
     if (oldPrice > 0 && m.price > 0 && m.price !== oldPrice) {
@@ -971,7 +953,7 @@ class DeltaPaperApp {
       if (btn) {
         const priceEl = btn.querySelector('.price');
         if (priceEl) {
-          priceEl.textContent = mkt.price > 0 ? this.fmtPrice(mkt.price, mkt.dec) : 'ΓÇª';
+          priceEl.textContent = mkt.price > 0 ? this.fmtPrice(mkt.price, mkt.dec) : '…';
           const c = this.chgOf(mkt);
           priceEl.className = 'price mono ' + (c >= 0 ? 'pos' : 'neg');
         }
@@ -987,7 +969,7 @@ class DeltaPaperApp {
 
   renderQty() {
     const S = this.state.get();
-    this.$('qtyLevRt').textContent = S.lev + 'x ΓÜÖ';
+    this.$('qtyLevRt').textContent = S.lev + 'x ⚙';
 
     if (document.activeElement !== this.$('qtyIn')) {
       this.$('qtyIn').value = this.curLots >= 1 ? this.curLots : '';
@@ -995,7 +977,7 @@ class DeltaPaperApp {
 
     const m = this.market.getMarket(this.selSym);
     if (!m || !(m.price > 0) || !(this.curLots >= 1)) {
-      this.$('qtyInfo').textContent = 'ΓÇö';
+      this.$('qtyInfo').textContent = '—';
       return;
     }
 
@@ -1006,12 +988,12 @@ class DeltaPaperApp {
 
     this.$('qtyInfo').textContent = this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') +
       ' = ' + this.fmtQty(qty) + ' ' + this.config.SYM_META[this.selSym].short +
-      ' Γëê $' + this.fmtUsd0(notional) + ' ΓÇó margin $' + this.fmtUsd(margin);
+      ' → $' + this.fmtUsd0(notional) + ' • margin $' + this.fmtUsd(margin);
   }
 
   renderEntry() {
     const S = this.state.get();
-    const sub = (this.curLots >= 1) ? (this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') + ' ΓÇó ' + S.lev + 'x') : 'ΓÇö';
+    const sub = (this.curLots >= 1) ? (this.curLots + ' lot' + (this.curLots > 1 ? 's' : '') + ' • ' + S.lev + 'x') : '—';
     this.$('buySub').textContent = sub;
     this.$('sellSub').textContent = sub;
     this.$('convHint').style.display = (S.usd < 5 && S.inr >= 1) ? 'flex' : 'none';
@@ -1063,11 +1045,11 @@ class DeltaPaperApp {
 
         const qtyEl = document.createElement('span');
         qtyEl.className = 'pc-qty';
-        qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' ΓÇó ' + this.fmtQty(pos.qty);
+        qtyEl.textContent = pos.lots + ' lot' + (pos.lots > 1 ? 's' : '') + ' • ' + this.fmtQty(pos.qty);
 
         const upnlEl = document.createElement('span');
         upnlEl.className = 'pc-upnl';
-        upnlEl.textContent = 'ΓÇö';
+        upnlEl.textContent = '—';
 
         row1.append(sideTag, symEl, qtyEl, upnlEl);
 
@@ -1080,20 +1062,20 @@ class DeltaPaperApp {
 
         const mkEl = document.createElement('span');
         mkEl.dataset.mk = '';
-        mkEl.textContent = 'Mk ΓÇö';
+        mkEl.textContent = 'Mk —';
 
         const tpSlEl = document.createElement('span');
         tpSlEl.className = 'pc-tpsl';
         const tpSlTxt = (pos.tp || pos.sl)
           ? ((pos.tp ? 'TP ' + this.fmtPxShort(pos.tp) : '') +
-             (pos.tp && pos.sl ? ' ΓÇó ' : '') +
+             (pos.tp && pos.sl ? ' • ' : '') +
              (pos.sl ? 'SL ' + this.fmtPxShort(pos.sl) : ''))
           : '';
         tpSlEl.textContent = tpSlTxt;
 
         const arrowEl = document.createElement('span');
         arrowEl.className = 'pc-arrow';
-        arrowEl.textContent = 'ΓÇ║';
+        arrowEl.textContent = '›';
 
         row2.append(inEl, mkEl, tpSlEl, arrowEl);
         card.append(row1, row2);
@@ -1113,7 +1095,7 @@ class DeltaPaperApp {
       const roe = up / pos.margin * 100;
       const refs = this._posCards[k];
       if (!refs) return;
-      refs.mkEl.textContent = 'Mk ' + (m.price > 0 ? this.fmtPxShort(m.price) : 'ΓÇª');
+      refs.mkEl.textContent = 'Mk ' + (m.price > 0 ? this.fmtPxShort(m.price) : '…');
       refs.upnlEl.textContent = this.fmtSign(up) + ' (' + (roe >= 0 ? '+' : '') + roe.toFixed(1) + '%)';
       refs.upnlEl.className = 'pc-upnl mono ' + (up >= 0 ? 'pos' : 'neg');
     });
@@ -1151,7 +1133,7 @@ class DeltaPaperApp {
 
       const tdPnl = document.createElement('td');
       tdPnl.className = h.pnl > 0 ? 'pos' : (h.pnl < 0 ? 'neg' : '');
-      tdPnl.textContent = h.pnl ? this.fmtSign(h.pnl) : 'ΓÇö';
+      tdPnl.textContent = h.pnl ? this.fmtSign(h.pnl) : '—';
 
       tr.append(tdTime, tdSym, tdLabel, tdPrice, tdPnl);
       fragment.appendChild(tr);
@@ -1168,14 +1150,14 @@ class DeltaPaperApp {
     const updateEl = (id, val) => { const el = this.$(id); if (el) el.textContent = val; };
     updateEl('fwInr', this.fmtInr(S.inr));
     updateEl('fwUsd', this.fmtUsd(S.usd) + ' USD');
-    updateEl('fwUsdSub', 'Γëê ' + this.fmtInr(S.usd * rate) + ' ΓÇó Locked ' + this.fmtUsd(this.lockedUsd()));
+    updateEl('fwUsdSub', '→ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd()));
     updateEl('fwInr2', this.fmtInr(S.inr));
     updateEl('fwUsd2', this.fmtUsd(S.usd) + ' USD');
-    updateEl('fwUsdSub2', 'Γëê ' + this.fmtInr(S.usd * rate) + ' ΓÇó Locked ' + this.fmtUsd(this.lockedUsd()));
+    updateEl('fwUsdSub2', '→ ' + this.fmtInr(S.usd * rate) + ' • Locked ' + this.fmtUsd(this.lockedUsd()));
 
     if (!this.$('fundsOverlay').classList.contains('show')) return;
 
-    this.$('fRate').textContent = 'Γé╣' + rate.toFixed(2);
+    this.$('fRate').textContent = '₹' + rate.toFixed(2);
     this.$('wdAvail').textContent = this.fmtInr(S.inr);
 
     const sig = S.ledger.length + ':' + (S.ledger[0] ? S.ledger[0].t : '');
@@ -1199,11 +1181,11 @@ class DeltaPaperApp {
 
       const tdInr = document.createElement('td');
       tdInr.className = l.dInr ? (l.dInr > 0 ? 'pos' : 'neg') : '';
-      tdInr.textContent = l.dInr ? this.fmtInrS(l.dInr) : 'ΓÇö';
+      tdInr.textContent = l.dInr ? this.fmtInrS(l.dInr) : '—';
 
       const tdUsd = document.createElement('td');
       tdUsd.className = l.dUsd ? (l.dUsd > 0 ? 'pos' : 'neg') : '';
-      tdUsd.textContent = l.dUsd ? this.fmtSign(l.dUsd) : 'ΓÇö';
+      tdUsd.textContent = l.dUsd ? this.fmtSign(l.dUsd) : '—';
 
       tr.append(tdTime, tdType, tdInr, tdUsd);
       fragment.appendChild(tr);
@@ -1233,15 +1215,15 @@ class DeltaPaperApp {
 
     const closed = S.wins + S.losses;
     this.$('stTrades').textContent = String(closed);
-    this.$('stWin').textContent = closed ? ((S.wins / closed) * 100).toFixed(1) + '%' : 'ΓÇö';
+    this.$('stWin').textContent = closed ? ((S.wins / closed) * 100).toFixed(1) + '%' : '—';
 
     const re = this.$('stReal');
     re.textContent = this.fmtSign(S.realized) + ' $';
     re.className = 'sv ' + (S.realized >= 0 ? 'pos' : 'neg');
 
     this.$('stFees').textContent = this.fmtUsd(S.feesTotal) + ' $';
-    this.$('stBest').textContent = S.best > 0 ? this.fmtSign(S.best) + ' $' : 'ΓÇö';
-    this.$('stWorst').textContent = S.worst < 0 ? this.fmtSign(S.worst) + ' $' : 'ΓÇö';
+    this.$('stBest').textContent = S.best > 0 ? this.fmtSign(S.best) + ' $' : '—';
+    this.$('stWorst').textContent = S.worst < 0 ? this.fmtSign(S.worst) + ' $' : '—';
 
     this.drawEquityCurve();
 
