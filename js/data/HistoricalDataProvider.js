@@ -214,8 +214,9 @@ class CompositeHistoricalProvider extends HistoricalDataProvider {
       return await this.delta.getCandles(opts);
     }catch(e){
       if(!allowFallback) throw e;
-      // Only fallback on network/CORS errors, not on validation errors
-      const isFallbackable = /CORS|NETWORK|TIMEOUT|Delta HTTP 4|Delta HTTP 5/.test(e.message) || e.category==='CORS_ERROR' || e.category==='NETWORK_ERROR' || e.category==='TIMEOUT' || e.category==='SERVER_ERROR';
+      // Never fall back for validation / malformed-request errors (4xx). Only for transient transport failures.
+      // INVALID_RESPONSE (Delta HTTP 4xx / API validation) must NOT trigger Binance fallback — would silently proxy wrong-exchange data.
+      const isFallbackable = e.category==='CORS_ERROR' || e.category==='NETWORK_ERROR' || e.category==='TIMEOUT' || e.category==='SERVER_ERROR' || /CORS|NETWORK|TIMEOUT|Delta HTTP 5/.test(e.message || '');
       if(!isFallbackable) throw e;
       if(global.DELTA_LOGGER) DELTA_LOGGER.warn('[Provider] Delta failed, falling back to Binance:', e.message);
       return await this.binance.getCandles(opts);

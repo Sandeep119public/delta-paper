@@ -37,6 +37,7 @@ class DeltaPaperApp {
     this._posKeyStr = '';
 
     this._chartRequest = 0;
+    this._simulationTimer = null;
 
     // Visualization modules (initialized in _initChart)
     this.vwap = null;
@@ -858,7 +859,8 @@ class DeltaPaperApp {
   flushSave(force) { this.state.flushSave(); }
 
   startSimulationLoop() {
-    setInterval(() => {
+    if (this._simulationTimer) return;
+    this._simulationTimer = setInterval(() => {
       this._checkTradingTriggers();
       this.markDirty();
     }, 1000);
