@@ -15,6 +15,8 @@ class MarketDataService {
     this.updateCount = 0;
     this.lastUpdateTime = 0;
     this.notifyRAF = null;
+    this.restPollTimer = null;
+    this.initPromise = null;
 
     // Bind methods
     this.handleMessage = this.handleMessage.bind(this);
@@ -24,27 +26,46 @@ class MarketDataService {
    * Initialize market data service
    */
   async init() {
-    // Initialize market entries
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = this._init();
+    return this.initPromise;
+  }
+
+  async _init() {
     this.config.SYMBOLS.forEach(sym => {
-      this.markets[sym] = this.createMarketEntry(sym);
+      if (!this.markets[sym]) this.markets[sym] = this.createMarketEntry(sym);
     });
 
-    // Boot sequence: fetch lot sizes and initial ticker data
-    await Promise.all([
-      this.bootLots(),
-      this.bootREST()
+    // Never let a slow or hanging REST endpoint keep the application in SYNC forever.
+    const timeout = (promise, ms, label) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out')), ms))
+    ]);
+    await Promise.allSettled([
+      timeout(this.bootLots(), 8000, 'Lot bootstrap'),
+      timeout(this.bootREST(), 8000, 'Ticker bootstrap')
     ]);
 
-    // Subscribe to WebSocket messages
     this.ws.onMessage(this.handleMessage);
-
-    // Connect WebSocket for live updates
     this.ws.connectAll();
 
-    // Start REST polling as backup (3 second interval)
-    setInterval(() => this.restPoll(), 3000);
+    if (!this.restPollTimer) this.restPollTimer = setInterval(() => this.restPoll(), 3000);
 
-    DELTA_LOGGER.log('[MarketDataService] Initialized with', Object.keys(this.markets).length, 'symbols');
+    // Guarantee a visible terminal state even when both network sources are unavailable.
+    if (this.dataSource === 'boot') {
+      this.config.SYMBOLS.forEach(sym => {
+        const m = this.markets[sym];
+        if (m && !(m.price > 0)) {
+          const sim = this.getSimulatedPrice(sym);
+          m.prevPrice = sim; m.price = sim; m.gotLive = false;
+        }
+      });
+      this.dataSource = Object.values(this.markets).some(m => m.price > 0) ? 'sim' : 'offline';
+      this.lastUpdateTime = Date.now();
+      this.notifyListeners();
+    }
+
+    DELTA_LOGGER.log('[MarketDataService] Initialized with', Object.keys(this.markets).length, 'symbols; source=', this.dataSource);
   }
 
   /**
@@ -62,6 +83,10 @@ class MarketDataService {
       funding: null,
       lot: this.config.LOT_SIZES[symbol] || 0.001,
       gotLive: false,
+      lastWsUpdate: 0,
+      lastRestUpdate: 0,
+      lastTradeSize: 0,
+      lastTradeTime: 0,
       dec: 2,
       decLocked: false
     };
@@ -72,6 +97,8 @@ class MarketDataService {
    * @param {Object} msg - Parsed message
    */
   handleMessage(msg) {
+    this._ingestSource = 'ws';
+    try {
     const msgType = msg.type;
     let updated = false;
 
@@ -163,6 +190,7 @@ class MarketDataService {
       this.dataSource = 'live';
       this.notifyListeners();
     }
+    } finally { this._ingestSource = null; }
   }
 
   /**
@@ -189,6 +217,8 @@ class MarketDataService {
       m.prevPrice = m.price || mark;
       m.price = mark;
       m.gotLive = true;
+      if (this._ingestSource === 'ws') { m.lastWsUpdate = Date.now(); this.dataSource = 'live'; }
+      else if (this._ingestSource === 'rest') { m.lastRestUpdate = Date.now(); if (this.dataSource !== 'live') this.dataSource = 'rest'; }
       
       // Auto-detect decimal precision
       if (!m.decLocked) {
@@ -243,12 +273,14 @@ class MarketDataService {
    * Bootstrap via REST API
    */
   async bootREST() {
+    this._ingestSource = 'rest';
     try {
       const tickers = await this.api.get(
         '/v2/tickers?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(',')
       );
       if (Array.isArray(tickers) && tickers.length) {
         this.buildMarketsFromTickers(tickers);
+        this.dataSource = 'rest';
         DELTA_LOGGER.log('[MarketDataService] Bootstrapped via REST - got', tickers.length, 'tickers');
       }
     } catch (e) {
@@ -261,7 +293,7 @@ class MarketDataService {
           this.markets[sym].gotLive = false;
         }
       });
-    }
+    } finally { this._ingestSource = null; }
   }
 
   /**
@@ -298,6 +330,7 @@ class MarketDataService {
    * Periodic REST polling as WebSocket backup
    */
   async restPoll() {
+    this._ingestSource = 'rest';
     try {
       const tickers = await this.api.get(
         '/v2/tickers?contract_types=perpetual_futures&underlying_asset_symbols=' + this.config.SYMBOLS.join(',')
@@ -386,13 +419,15 @@ class MarketDataService {
    * @returns {Object} Statistics
    */
   getStats() {
-    return {
-      updates: this.updateCount,
-      lastUpdate: this.lastUpdateTime,
-      latency: this.lastUpdateTime ? Date.now() - this.lastUpdateTime : null,
-      source: this.dataSource,
-      sockets: this.ws.getStatus().active
-    };
+    const now = Date.now(), markets = Object.values(this.markets || {});
+    const ws = markets.filter(m => m.lastWsUpdate && now - m.lastWsUpdate <= 10000).length;
+    const rest = markets.filter(m => m.lastRestUpdate && now - m.lastRestUpdate <= 10000).length;
+    const sockets = this.ws?.getStatus ? this.ws.getStatus().active : 0;
+    let source = this.dataSource;
+    if (ws > 0 && sockets > 0) source = 'live';
+    else if (rest > 0) source = 'rest';
+    else if (markets.some(m => m.price > 0) && source === 'boot') source = 'sim';
+    return { updates:this.updateCount,lastUpdate:this.lastUpdateTime,latency:this.lastUpdateTime ? now-this.lastUpdateTime : null,source,sockets,liveSymbols:ws,restSymbols:rest };
   }
 }
 
