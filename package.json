@@ -20,6 +20,10 @@
     "trading"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
   "devDependencies": {
     "@types/node": "^26.3.0",
     "decimal.js": "^10.6.0",

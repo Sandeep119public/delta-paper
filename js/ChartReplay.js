@@ -35,6 +35,11 @@ class ChartReplay {
     if(this.index>=this.source.length-1){this.pause();this._status('Replay finished');return;}
     this.index++; this.render(); this._status('Replay '+(this.index+1)+' / '+this.source.length);
   }
+  prev(){
+    if(!this.active||this.index<=0) return;
+    this.index--; this.render(); this._status('Replay '+(this.index+1)+' / '+this.source.length);
+  }
+  next(){ this.step(); }
   play(){
     if(!this.active)return this.start().then(()=>this.play());
     this.playing=true; this.ui(); this._status('Playing • '+this.speed+'x'); this.loop();

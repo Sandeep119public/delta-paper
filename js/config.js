@@ -80,6 +80,19 @@ const DELTA_CONFIG = {
     HEATMAP_BUCKET_SIZE: 50,
     HEATMAP_FPS: 15,
     VWAP_BANDS: true,
-  }
+  },
+
+  // Historical Data – Binance Futures (public kline source)
+  BINANCE_KLINES_BASE: 'https://fapi.binance.com/fapi/v1/klines',
+  BINANCE_SYMBOL_MAP: { BTCUSD:'BTCUSDT', ETHUSD:'ETHUSDT', SOLUSD:'SOLUSDT' },
+  DATA_API_BASE: '', // production provider base (e.g. https://api.example.com)
+  // Historical provider mode: direct | proxy | production | offline | custom-provider
+  REMOTE_DATA_MODE: 'direct',
+  // For GitHub Pages CORS fallback: optional fallback only
+  BINANCE_PROXY_CHAIN: [
+    u=>u,
+    u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+    u=>'https://corsproxy.io/?url='+encodeURIComponent(u)
+  ]
 };
 
