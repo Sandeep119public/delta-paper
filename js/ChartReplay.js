@@ -8,15 +8,10 @@ class ChartReplay {
   }
   async start(){
     const a=this.app, cc=a.chartController;
+    if(!cc) throw new Error('Chart controller unavailable.');
     if(!a._historyCache || a._historyCache.length<20){
       this._status('Loading history…');
-      if(cc) await cc.load(a.selSym,a._tf);
-      else if(typeof a._loadCandles==='function') await a._loadCandles(a.selSym,a._tf);
-      await new Promise(resolve=>{
-        const until=Date.now()+8000;
-        const tick=()=>((a._historyCache||[]).length>=20||Date.now()>until)?resolve():setTimeout(tick,120);
-        tick();
-      });
+      await cc.load(a.selSym,a._tf);
     }
     if(!a._historyCache || a._historyCache.length<20) throw new Error('Not enough candle history yet. Wait for the chart to load and try again.');
     this.source=a._historyCache.slice().filter(c=>Number.isFinite(Number(c.time))&&Number.isFinite(Number(c.open))&&Number.isFinite(Number(c.high))&&Number.isFinite(Number(c.low))&&Number.isFinite(Number(c.close))&&Number(c.high)>=Number(c.low)&&Number(c.open)>0&&Number(c.close)>0).sort((x,y)=>Number(x.time)-Number(y.time));
@@ -57,7 +52,6 @@ class ChartReplay {
     const a=this.app, cc=a.chartController;
     this.active=false;
     if(cc) cc.setData(a._historyCache);
-    else if(a._setChartData) a._setChartData(a._historyCache);
     this.source=[]; if(a.trading)a.trading.clearReplay(); this.ui(); this._status('');
   }
   setSpeed(v){this.speed=Math.max(1,Math.min(50,Number(v)||1));if(this.playing)this._status('Playing • '+this.speed+'x');}
