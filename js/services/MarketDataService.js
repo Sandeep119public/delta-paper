@@ -349,8 +349,8 @@ class MarketDataService {
         }
       }
     } catch (e) {
-      // Silent fail for polling
-    }
+      DELTA_LOGGER.warn('[MarketDataService] REST poll failed:', e.message);
+    } finally { this._ingestSource = null; }
   }
 
   /**
