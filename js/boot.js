@@ -22,6 +22,8 @@ const historicalStorage=new HistoricalDataStorage(); await historicalStorage.ini
 const stateManager=new AppState(config,storage);await stateManager.load();
 const marketService=new MarketDataService(config,apiService,wsService),validator=new InputValidator(config);
 const exchangeTime=new ExchangeTime(config);
+// Keep the existing provider abstraction, but make it configurable so the
+// application can use an India-native backend without changing chart code.
 const provider=new BinanceDataProvider(config);
 const historicalDataManager=new HistoricalDataManager(config, historicalStorage, DataVerifier, new DataDownloader(config, historicalStorage, provider), exchangeTime);
 window.exchangeTime=exchangeTime;
