@@ -53,11 +53,11 @@ const DELTA_CONFIG = {
   MIN_WITHDRAW: 100,      // Minimum withdrawal in INR
 
   // Storage keys
-  STORE_KEY: 'deltaPaper.mob.v9',
+  STORE_KEY: 'deltaPaper.mob.v11',
 
   // App metadata
   APP_NAME: 'Delta Paper',
-  APP_VERSION: '9.1.0',   // Updated for real-time fixes
+  APP_VERSION: '11.0.0',
 
   // Validation limits
   VALIDATION: {
@@ -82,11 +82,13 @@ const DELTA_CONFIG = {
     VWAP_BANDS: true,
   },
 
-  // Historical Data – Binance Futures (public kline source)
+  // Historical Data – Delta India primary; Binance only as explicit fallback
+  DELTA_CANDLES_BASE: 'https://api.india.delta.exchange/v2/history/candles',
   BINANCE_KLINES_BASE: 'https://fapi.binance.com/fapi/v1/klines',
   BINANCE_SYMBOL_MAP: { BTCUSD:'BTCUSDT', ETHUSD:'ETHUSDT', SOLUSD:'SOLUSDT' },
+  BINANCE_FALLBACK: false, // set true to allow Binance when Delta is unreachable (must be explicit)
   DATA_API_BASE: '', // production provider base (e.g. https://api.example.com)
-  // Historical provider mode: direct | proxy | production | offline | custom-provider
+  // Historical provider mode: direct | proxy | production | offline | custom-provider | delta_with_binance_fallback
   REMOTE_DATA_MODE: 'direct',
   // For GitHub Pages CORS fallback: optional fallback only
   BINANCE_PROXY_CHAIN: [

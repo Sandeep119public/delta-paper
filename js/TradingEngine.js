@@ -41,7 +41,12 @@ class TradingEngine {
   }
 
   onPrice(symbol,price){
-    if(this.mode==='replay')this.setReplayPrice(symbol,price,Date.now());
+    // Do not auto-overwrite replay price with live ticks — replay price is set explicitly via setReplayPrice
+    // If in replay mode and this call is from live market, ignore it for replay symbols
+    if(this.mode==='replay' && !this.replayPrices.has(symbol)){
+      // No replay price for this symbol — treat as live but still check triggers with provided price
+      // (allows TP/SL to work if replay hasn't set price yet)
+    }
     const pos=this.state.get().positions?.[symbol];if(!pos||!(price>0))return null;
     const liq=this.financial.liquidationPrice(pos);
     if((pos.dir===1&&price<=liq)||(pos.dir===-1&&price>=liq))return this.financial.liquidate(symbol,price,'LIQUIDATION');

@@ -260,7 +260,7 @@ class DataManagerUI {
       `Missing: ${snap.local.missing}`,
       '------------------------',
       'REMOTE SOURCE',
-      `Binance: ${snap.lastError? 'Failed' : (snap.remote? 'Connected':'No fetch yet')}`,
+      `Remote (Delta): ${snap.lastError? 'Failed' : (snap.remote? 'Connected':'No fetch yet')}`,
       `Last request: ${snap.lastRequest? JSON.stringify(snap.lastRequest): '—'}`,
       `Response candles: ${snap.remote? (snap.remote.remoteCandles ?? snap.remote.count ?? '—') : '—'}`,
       `Valid: ${snap.local.count}`,

@@ -127,33 +127,62 @@ class DeltaPaperApp {
     this.curLots = this.getLots(this.selSym);
     if (this.state.get().equityCurve.length === 0) this.sampleEq();
 
-    this._initChart();
-    this._initVisualization();
-    this.renderAll();
-    this.startSimulationLoop();
-    DELTA_LOGGER.log('[App] Initialized successfully');
+    // Trading/risk/simulation MUST start independently of chart — failure boundary isolation
+    try { this.startSimulationLoop(); } catch(e){ DELTA_LOGGER.error('[App] Simulation loop start failed',e); }
+    try { this.renderAll(); } catch(e){ DELTA_LOGGER.error('[App] Initial render failed',e); }
+
+    // Chart in its own failure boundary — never breaks trading
+    try {
+      this._initChart();
+    } catch(e){
+      DELTA_LOGGER.error('[App] Chart init failed — trading continues',e);
+      this._showChartErrorBoundary(e);
+    }
+
+    // Visualization independently — never breaks trading or chart
+    try { this._initVisualization(); } catch(e){ DELTA_LOGGER.warn('[App] VWAP init failed — continuing',e); }
+
+    DELTA_LOGGER.log('[App] Initialized successfully (trading isolated)');
+  }
+
+  _showChartErrorBoundary(err){
+    try{
+      const c=this.$('tv-chart-container');
+      if(c && !c.querySelector('#chartErrorOverlay')){
+        c.style.position='relative';
+        const o=document.createElement('div');
+        o.id='chartErrorOverlay';
+        o.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(11,15,25,0.92);z-index:10;padding:16px;';
+        o.innerHTML='<div style="max-width:520px;width:100%;background:#111827;border:1px solid #243448;border-radius:12px;padding:16px;font-family:JetBrains Mono,monospace"><div style="font-weight:800;color:#f8fafc">Chart Unavailable</div><div style="font-size:11px;color:#94a3b8;margin-top:6px">'+String(err.message||err)+'</div><div style="font-size:11px;color:#22c55e;margin-top:8px">Trading, TP/SL and liquidation continue to operate.</div><button class="mini-btn" onclick="location.reload()" style="margin-top:10px">Retry</button></div>';
+        c.appendChild(o);
+      }
+    }catch(e){}
   }
 
   _initChart() {
-    if (!this.chartController) throw new Error('ChartController is not initialized');
+    if (!this.chartController) {
+      DELTA_LOGGER.warn('[App] ChartController not initialized — chart disabled but trading active');
+      throw new Error('ChartController is not initialized');
+    }
     return this.chartController.init();
   }
 
   _initVisualization() {
     if (!this._tvChart || !this._tvCandle) return;
 
-    // VWAP indicator
+    // VWAP indicator — independently guarded
     try {
       this.vwap = new VwapIndicator(this._tvChart, { showBands: false });
-      // Keep indicators opt-in. A fresh chart must show price action first.
       this.vwap.toggle(false);
       const vwapBtn = this.$('vwapToggle');
       if (vwapBtn) {
         vwapBtn.classList.remove('on');
         vwapBtn.addEventListener('click', () => {
-          const on = vwapBtn.classList.toggle('on');
-          this.vwap.toggle(on);
-          if (on) this.vwap.setData(this._historyCache || []);
+          try{
+            const on = vwapBtn.classList.toggle('on');
+            this.vwap.toggle(on);
+            if (on) this.vwap.setData(this._historyCache || []);
+          }catch(e){ DELTA_LOGGER.warn('[App] VWAP toggle failed',e); }
         });
       }
     } catch (e) { DELTA_LOGGER.warn('[App] VWAP init failed', e); }

@@ -79,6 +79,7 @@ class MarketDataService {
       price: null,
       prevPrice: null,
       open24: null,
+      oi: null,
       chg24: null,
       funding: null,
       lot: this.config.LOT_SIZES[symbol] || 0.001,
@@ -227,17 +228,37 @@ class MarketDataService {
       }
     }
 
-    // 24h change
-    const ch = parseFloat(t.ltp_change_24h) || parseFloat(t.mark_change_24h);
-    if (isFinite(ch)) m.chg24 = ch;
+    // 24h open price — distinct from open interest
+    // Delta ticker fields: open/close represent 24h open/close; fall back to computed if absent
+    let open24 = parseFloat(t.open);
+    if (!isFinite(open24) || open24 <= 0) open24 = parseFloat(t.open_price);
+    if (!isFinite(open24) || open24 <= 0) open24 = parseFloat(t.o);
+    if (isFinite(open24) && open24 > 0) m.open24 = open24;
+
+    // 24h change — prefer explicit, otherwise compute from open24
+    const chExplicit = parseFloat(t.ltp_change_24h) || parseFloat(t.mark_change_24h) || parseFloat(t.change_24h);
+    if (isFinite(chExplicit)) {
+      m.chg24 = chExplicit;
+    } else if (isFinite(m.open24) && m.open24 > 0 && isFinite(m.price) && m.price > 0) {
+      m.chg24 = ((m.price - m.open24) / m.open24) * 100;
+    }
 
     // Funding rate
     const fr = parseFloat(t.funding_rate);
     if (isFinite(fr)) m.funding = fr;
 
-    // Open interest
-    const oi = parseFloat(t.open_interest) || parseFloat(t.oi);
-    if (isFinite(oi)) m.open24 = oi;
+    // Open interest — NEVER stored as open24
+    const oi = parseFloat(t.open_interest) || parseFloat(t.oi) || parseFloat(t.oi_value) || parseFloat(t.openInterest);
+    if (isFinite(oi) && oi >= 0) m.oi = oi;
+
+    // Timestamps — preserve for staleness checks
+    const ts = parseFloat(t.timestamp) || parseFloat(t.time) || parseFloat(t.updated_at);
+    if (isFinite(ts) && ts > 0) {
+      // Normalize to ms: Delta typically uses microseconds; heuristic
+      const tsMs = ts > 1e13 ? Math.floor(ts / 1000) : ts > 1e11 ? Math.floor(ts) : Math.floor(ts * 1000);
+      if (this._ingestSource === 'ws') m.lastWsUpdate = Math.max(m.lastWsUpdate, tsMs);
+      else if (this._ingestSource === 'rest') m.lastRestUpdate = Math.max(m.lastRestUpdate, tsMs);
+    }
 
     this.updateCount++;
     this.lastUpdateTime = Date.now();
@@ -418,16 +439,28 @@ class MarketDataService {
    * Get update statistics
    * @returns {Object} Statistics
    */
+  /** Returns true if WS data is stale (>15s without update) */
+  isWsStale() {
+    const now = Date.now();
+    const wsRecent = Object.values(this.markets).some(m => m.lastWsUpdate && now - m.lastWsUpdate <= 15000);
+    return !wsRecent;
+  }
+
   getStats() {
     const now = Date.now(), markets = Object.values(this.markets || {});
+    const staleThreshold = 15000;
     const ws = markets.filter(m => m.lastWsUpdate && now - m.lastWsUpdate <= 10000).length;
+    const wsStale = markets.every(m => !m.lastWsUpdate || now - m.lastWsUpdate > staleThreshold);
     const rest = markets.filter(m => m.lastRestUpdate && now - m.lastRestUpdate <= 10000).length;
     const sockets = this.ws?.getStatus ? this.ws.getStatus().active : 0;
     let source = this.dataSource;
-    if (ws > 0 && sockets > 0) source = 'live';
+    const anyGotLive = markets.some(m => m.gotLive && m.lastWsUpdate && now - m.lastWsUpdate <= staleThreshold);
+    if (ws > 0 && sockets > 0 && !wsStale) source = 'live';
     else if (rest > 0) source = 'rest';
-    else if (markets.some(m => m.price > 0) && source === 'boot') source = 'sim';
-    return { updates:this.updateCount,lastUpdate:this.lastUpdateTime,latency:this.lastUpdateTime ? now-this.lastUpdateTime : null,source,sockets,liveSymbols:ws,restSymbols:rest };
+    else if (markets.some(m => m.price > 0) && (source === 'boot' || wsStale)) source = wsStale && anyGotLive ? 'rest' : 'sim';
+    // Never masquerade SIM as LIVE
+    if (source === 'live' && wsStale) source = rest > 0 ? 'rest' : 'sim';
+    return { updates:this.updateCount,lastUpdate:this.lastUpdateTime,latency:this.lastUpdateTime ? now-this.lastUpdateTime : null,source,sockets,liveSymbols:ws,restSymbols:rest, anyGotLive: !wsStale && ws>0 };
   }
 }
 

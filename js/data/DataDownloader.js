@@ -1,4 +1,4 @@
-/* DataDownloader: batched Binance fetch with backoff, timeout, proxy fallback, rate-limit. */
+/* DataDownloader: batched provider fetch with backoff, timeout, proxy fallback, rate-limit. */
 (function(global){
 'use strict';
 const DEFAULT_BATCH=1000;
@@ -81,9 +81,9 @@ class DataDownloader {
       while(this.active && this.active.paused){ await new Promise(r=>setTimeout(r,300)); if(this.active.cancelled) throw new Error('Download cancelled'); }
       try{
         const r=await this._fetchWithTimeout(rawUrl);
-        if(!r.ok) throw new Error('Binance HTTP '+r.status);
+        if(!r.ok) throw new Error('Provider HTTP '+r.status);
         const data=await r.json();
-        if(!Array.isArray(data)) throw new Error('Invalid Binance response');
+        if(!Array.isArray(data)) throw new Error('Invalid provider response');
         return data;
       }catch(e){
         lastErr=e;
@@ -114,7 +114,7 @@ class DataDownloader {
           batch=await this.fetchBatch(symbol, interval, cursor, batchEnd + step -1);
         }catch(e){
           if(global.DELTA_LOGGER) DELTA_LOGGER.warn('[Downloader] batch failed', e);
-          throw new Error('Binance fetch failed at '+ new Date(cursor).toISOString() + ': ' + e.message);
+          throw new Error('Provider fetch failed at '+ new Date(cursor).toISOString() + ': ' + e.message);
         }
         if(!batch.length){
           cursor = batchEnd + step;

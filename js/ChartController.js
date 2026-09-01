@@ -24,11 +24,33 @@ class ChartController {
       try{ this.app._tvCandle.applyOptions({priceFormat:{type:'price',precision:prec, minMove: Math.pow(10,-prec)}});}catch(e){}
     }
   }
-  init(){ return this._init(); }
+  init(){ try{ return this._init(); }catch(e){ DELTA_LOGGER.error('[Chart] init fatal',e); this._showLibraryError(e); throw e; } }
+  _showLibraryError(err){
+    try{
+      const app=this.app, c=app.$('tv-chart-container');
+      if(!c) return;
+      this._ensureErrorOverlay(c);
+      const overlay=document.getElementById('chartErrorOverlay');
+      const det=document.getElementById('chartErrorDetails');
+      if(overlay) overlay.style.display='flex';
+      if(det) det.innerHTML='Chart library failed to load (Lightweight Charts 4.1.3).<br>Trading continues below.<br><span style="color:#94a3b8">'+String(err.message||err)+'</span>';
+      if(global.DELTA_LOGGER) DELTA_LOGGER.error('[Chart] library unavailable',err);
+    }catch(e){}
+  }
   _init(){
     const app=this.app;
     const container=app.$('tv-chart-container');
-    if(!container||typeof LightweightCharts==='undefined') return;
+    if(!container){
+      DELTA_LOGGER.warn('[Chart] container missing — chart disabled, trading active');
+      return;
+    }
+    if(typeof LightweightCharts==='undefined'){
+      DELTA_LOGGER.error('[Chart] Lightweight Charts not loaded — CDN failure, showing error state. Trading continues.');
+      this._showLibraryError(new Error('LightweightCharts undefined — CDN load failed'));
+      // Ensure overlay visible
+      try{ this._ensureErrorOverlay(container); const o=document.getElementById('chartErrorOverlay'); if(o) o.style.display='flex'; }catch(e){}
+      return;
+    }
     // ensure overlay container styles
     this._ensureErrorOverlay(container);
     app._tvChart=LightweightCharts.createChart(container,{autoSize:true,layout:{background:{color:'#111827'},textColor:'#94a3b8',fontFamily:"'JetBrains Mono',monospace",fontSize:11},grid:{vertLines:{color:'rgba(36,52,72,.5)'},horzLines:{color:'rgba(36,52,72,.5)'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},rightPriceScale:{borderColor:'#243448',scaleMargins:{top:.08,bottom:.25}},timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#243448',rightOffset:8,minBarSpacing:5,shiftVisibleRangeOnNewBar:true}});
@@ -51,6 +73,7 @@ class ChartController {
       if(range&&range.from<80&&!app._loadingOlder&&app._historyCache.length) this.loadOlder();
     });
   }
+  _bindReplay(){const a=this.app,rb=a.$('replayBtn'),rp=a.$('replayPlay'),rs=a.$('replayStop'),rz=a.$('replaySpeed');if(rb)rb.addEventListener('click',async()=>{try{rb.disabled=true;if(!a.replay.active)await a.replay.start();else a.replay.stop();}catch(e){if(a.toast)a.toast('Replay unavailable',e.message,'err');}finally{rb.disabled=false;}});if(rp)rp.addEventListener('click',()=>a.replay.playing?a.replay.pause():a.replay.play());if(rs)rs.addEventListener('click',()=>a.replay.stop());if(rz)rz.addEventListener('change',()=>a.replay.setSpeed(rz.value));}
 
   _ensureErrorOverlay(container){
     if(container.querySelector('#chartErrorOverlay')) return;
@@ -141,6 +164,8 @@ class ChartController {
 
   load=async function(sym,tf){
     const a=this.app;
+    // Symbol/timeframe changes must invalidate any active replay to prevent price leaks
+    if(a.replay && a.replay.active) try{ a.replay.stop(); }catch(e){}
     if(sym) a.selSym=sym;
     if(tf) a._tf=tf;
     a._tfSec=TF[a._tf]||60;
@@ -244,23 +269,31 @@ class ChartController {
   feedTick(price){
     const a=this.app;
     if(a.replay&&a.replay.active) return;
-    if(!this._chartReady && !a._chartHistoryReady) return; // Wait for history before processing live ticks
+    if(!this._chartReady && !a._chartHistoryReady) return;
     if(!a._tvCandle||!(price>0)) return;
-    const now=Date.now(), bucket=Math.floor(now/1000/a._tfSec)*a._tfSec;
+    const now=(global.exchangeTime? global.exchangeTime.getAdjustedNow() : Date.now());
+    const msNow=Math.floor(now/1000)*1000;
+    const bucket=Math.floor(msNow/1000/a._tfSec)*a._tfSec;
+    // Guard: no future candles (bucket beyond latest completed + 1 interval)
+    const latestCompleted= global.exchangeTime? global.exchangeTime.getLatestCompletedCandle(a._tf) : Math.floor((Date.now()-1)/1000/a._tfSec)*a._tfSec*1000;
+    if(bucket*1000 > latestCompleted + this.TF[a._tf]*1000){
+      if(global.DELTA_LOGGER) DELTA_LOGGER.warn('[Chart] feedTick future bucket ignored',bucket);
+      return;
+    }
     const m=a.market.getMarket(a.selSym), size=Number(m&&m.lastTradeSize), volume=Number.isFinite(size)&&size>0?size:1;
     let c=a._curCandle;
     if(!c||c.time!==bucket){
-      // Do not create random candle if gap is huge; ensure continuity check
-      if(c && bucket - c.time > a._tfSec*10){
-        // large gap - keep last candle, new bucket starts fresh
+      if(c && (bucket - c.time) > a._tfSec*10){
+        if(global.DELTA_LOGGER) DELTA_LOGGER.warn('[Chart] large gap detected', {prev:c.time, bucket, gapBuckets:(bucket-c.time)/a._tfSec});
+        // Do not fabricate intermediate candles — start fresh bucket
       }
+      // No random gaps: only current bucket is created
       c=a._curCandle={time:bucket,open:price,high:price,low:price,close:price,volume:0};
     }
     c.high=Math.max(c.high,price);
     c.low=Math.min(c.low,price);
     c.close=price;
     c.volume=(c.volume||0)+volume;
-    // Ensure live tick never corrupts history: only update current candle, not history array
     a._tvCandle.update(c);
     if(a._tvVol) a._tvVol.update({time:bucket,value:c.volume,color:c.close>=c.open?'rgba(16,185,129,.35)':'rgba(239,68,68,.35)'});
     if(a.vwap) a.vwap.update(price,volume,Math.floor(now/1000));

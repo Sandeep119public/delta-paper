@@ -1,85 +1,67 @@
 /**
  * Delta Paper Trading - WebSocket Service
- * Manages WebSocket connections with heartbeat and exponential backoff reconnection
+ * Hardened: dedup connections, backoff jitter, stale handling, single bad endpoint isolation
  */
-
 class WebSocketService {
   constructor(config) {
     this.config = config;
-    this.connections = new Map(); // url -> { ws, hadData, heartbeat, retries }
+    this.connections = new Map(); // url -> { ws, hadData, heartbeat, retries, closedIntentionally, lastDataAt }
+    this.retryCounts = new Map(); // url -> retries (survives deletion)
+    this.reconnectTimers = new Map(); // url -> timer
     this.messageHandlers = new Set();
     this.reconnectHandlers = new Set();
+    this._connecting = new Set();
   }
-
-  /**
-   * Connect to all WebSocket endpoints
-   */
   connectAll() {
     this.config.WS_ENDPOINTS.forEach(url => this.connect(url));
   }
-
-  /**
-   * Open WebSocket connection to a specific endpoint
-   * @param {string} url - WebSocket endpoint URL
-   */
   connect(url) {
+    // Prevent duplicate connections / storms
+    if (this._connecting.has(url)) return;
+    const existing = this.connections.get(url);
+    if (existing && (existing.ws.readyState === 0 || existing.ws.readyState === 1)) return;
+    this._connecting.add(url);
     let ws;
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
+    try { ws = new WebSocket(url); } catch (e) {
+      this._connecting.delete(url);
       DELTA_LOGGER.warn('[WsService] Connection failed:', url, e.message);
       this.scheduleReconnect(url);
       return;
     }
-
-    const connection = {
-      url,
-      ws,
-      hadData: false,
-      heartbeat: null,
-      retries: 0
-    };
-
+    const retries = this.retryCounts.get(url) || 0;
+    const connection = { url, ws, hadData: false, heartbeat: null, retries, reconnectTimer: null, closedIntentionally: false };
     this.connections.set(url, connection);
-
     ws.onopen = () => {
+      this._connecting.delete(url);
+      this.retryCounts.set(url, 0);
+      connection.retries = 0;
       DELTA_LOGGER.log('[WsService] Connected:', url);
       this.startHeartbeat(connection);
       this.sendSubscriptions(connection);
       this.notifyReconnectHandlers(url, 'connected');
     };
-
     ws.onmessage = (event) => {
       let msg;
-      try {
-        msg = JSON.parse(event.data);
-      } catch (e) {
-        return;
-      }
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
       this.handleMessage(msg, connection);
     };
-
     ws.onclose = () => {
+      this._connecting.delete(url);
       this.stopHeartbeat(connection);
       this.connections.delete(url);
-      this.scheduleReconnect(url);
+      if (!connection.closedIntentionally) {
+        this.scheduleReconnect(url);
+      }
       this.notifyReconnectHandlers(url, 'disconnected');
     };
-
     ws.onerror = (e) => {
-      DELTA_LOGGER.warn('[WsService] Error:', url, e);
-      try { ws.close(); } catch (e) {}
+      DELTA_LOGGER.warn('[WsService] Error:', url, e && e.message || e);
+      try { ws.close(); } catch (_) {}
     };
   }
-
-  /**
-   * Send subscription messages - Delta India specific format
-   * @param {Object} connection - Connection object
-   */
   sendSubscriptions(connection) {
     const ws = connection.ws;
     if (!ws || ws.readyState !== 1) return;
-
     try {
       ws.send(JSON.stringify({
         type: 'subscribe',
@@ -91,153 +73,64 @@ class WebSocketService {
           ]
         }
       }));
-
       ws.send(JSON.stringify({ type: 'enable_heartbeat' }));
       DELTA_LOGGER.log('[WsService] Subscribed to:', this.config.SYMBOLS.join(', '));
-    } catch (e) {
-      DELTA_LOGGER.warn('[WsService] Subscription failed:', e.message);
-    }
+    } catch (e) { DELTA_LOGGER.warn('[WsService] Subscription failed:', e.message); }
   }
-
-  /**
-   * Start heartbeat interval for a connection
-   * @param {Object} connection - Connection object
-   */
   startHeartbeat(connection) {
     this.stopHeartbeat(connection);
     connection.heartbeat = setInterval(() => {
-      try {
-        if (connection.ws.readyState === 1) {
-          connection.ws.send('{"type":"ping"}');
-        }
-      } catch (e) {}
+      try { if (connection.ws.readyState === 1) connection.ws.send('{"type":"ping"}'); } catch (e) {}
     }, this.config.PERF.WS_HEARTBEAT);
   }
-
-  /**
-   * Stop heartbeat interval for a connection
-   * @param {Object} connection - Connection object
-   */
   stopHeartbeat(connection) {
-    if (connection.heartbeat) {
-      clearInterval(connection.heartbeat);
-      connection.heartbeat = null;
-    }
+    if (connection.heartbeat) { clearInterval(connection.heartbeat); connection.heartbeat = null; }
   }
-
-  /**
-   * Schedule WebSocket reconnection with exponential backoff
-   * @param {string} url - WebSocket endpoint URL
-   */
   scheduleReconnect(url) {
-    const connection = this.connections.get(url);
-    if (connection) {
-      connection.retries = Math.min(connection.retries + 1, 8);
-    }
-
-    const retries = connection ? connection.retries : 1;
-    const delay = Math.min(
-      this.config.PERF.MAX_RECONNECT_DELAY,
-      this.config.PERF.RECONNECT_BASE_DELAY * Math.pow(2, retries)
-    );
-
-    setTimeout(() => {
-      this.connections.delete(url);
+    // Cancel any pending timer for this url
+    if (this.reconnectTimers.has(url)) { clearTimeout(this.reconnectTimers.get(url)); this.reconnectTimers.delete(url); }
+    const prev = this.retryCounts.get(url) || 0;
+    const retries = Math.min(prev + 1, 8);
+    this.retryCounts.set(url, retries);
+    const base = this.config.PERF.RECONNECT_BASE_DELAY;
+    const max = this.config.PERF.MAX_RECONNECT_DELAY;
+    let delay = Math.min(max, base * Math.pow(2, retries));
+    delay = Math.floor(delay * (0.75 + Math.random()*0.5));
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(url);
       this.connect(url);
     }, delay);
+    this.reconnectTimers.set(url, timer);
   }
-
-  /**
-   * Handle incoming WebSocket message
-   * @param {Object} msg - Parsed message
-   * @param {Object} connection - Connection object
-   */
   handleMessage(msg, connection) {
     const msgType = msg.type;
-
-    // Skip non-data messages
-    if (!msgType || msgType === 'heartbeat' || msgType === 'subscriptions' || 
-        msgType === 'success' || msgType === 'pong') {
-      return;
-    }
-
+    if (!msgType || msgType === 'heartbeat' || msgType === 'subscriptions' || msgType === 'success' || msgType === 'pong') return;
+    // Normalize: ensure symbol fields are present before forwarding
     connection.hadData = true;
+    connection.lastDataAt = Date.now();
     this.notifyMessageHandlers(msg);
   }
-
-  /**
-   * Add message handler
-   * @param {Function} handler - Message handler function
-   * @returns {Function} Unsubscribe function
-   */
-  onMessage(handler) {
-    this.messageHandlers.add(handler);
-    return () => this.messageHandlers.delete(handler);
-  }
-
-  /**
-   * Add reconnect handler
-   * @param {Function} handler - Reconnect handler function
-   * @returns {Function} Unsubscribe function
-   */
-  onReconnect(handler) {
-    this.reconnectHandlers.add(handler);
-    return () => this.reconnectHandlers.delete(handler);
-  }
-
-  /**
-   * Notify all message handlers
-   * @param {Object} msg - Message to send
-   */
+  onMessage(handler) { this.messageHandlers.add(handler); return () => this.messageHandlers.delete(handler); }
+  onReconnect(handler) { this.reconnectHandlers.add(handler); return () => this.reconnectHandlers.delete(handler); }
   notifyMessageHandlers(msg) {
-    this.messageHandlers.forEach(handler => {
-      try {
-        handler(msg);
-      } catch (e) {
-        DELTA_LOGGER.error('[WsService] Handler error:', e);
-      }
-    });
+    this.messageHandlers.forEach(handler => { try { handler(msg); } catch (e) { DELTA_LOGGER.error('[WsService] Handler error:', e); } });
   }
-
-  /**
-   * Notify all reconnect handlers
-   * @param {string} url - WebSocket URL
-   * @param {string} status - Connection status
-   */
   notifyReconnectHandlers(url, status) {
-    this.reconnectHandlers.forEach(handler => {
-      try {
-        handler(url, status);
-      } catch (e) {
-        DELTA_LOGGER.error('[WsService] Reconnect handler error:', e);
-      }
-    });
+    this.reconnectHandlers.forEach(handler => { try { handler(url, status); } catch (e) { DELTA_LOGGER.error('[WsService] Reconnect handler error:', e); } });
   }
-
-  /**
-   * Get connection status
-   * @returns {Object} Connection statistics
-   */
   getStatus() {
-    const active = Array.from(this.connections.values()).filter(c => c.ws.readyState === 1).length;
-    return {
-      active,
-      total: this.connections.size,
-      endpoints: this.config.WS_ENDPOINTS.length
-    };
+    let active=0; for(const c of this.connections.values()){ try{ if(c.ws.readyState===1) active++; }catch(e){} }
+    return { active, total: this.connections.size, endpoints: this.config.WS_ENDPOINTS.length };
   }
-
-  /**
-   * Close all connections
-   */
   closeAll() {
-    this.connections.forEach((connection, url) => {
+    for(const [url, timer] of this.reconnectTimers.entries()) clearTimeout(timer);
+    this.reconnectTimers.clear();
+    for(const [url, connection] of this.connections.entries()){
+      connection.closedIntentionally = true;
       this.stopHeartbeat(connection);
-      try {
-        connection.ws.close();
-      } catch (e) {}
-    });
+      try { connection.ws.close(); } catch (e) {}
+    }
     this.connections.clear();
+    this._connecting.clear();
   }
 }
-

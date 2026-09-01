@@ -19,20 +19,44 @@ class ExchangeTime {
   async sync(){
     const mode=this.config.REMOTE_DATA_MODE||'direct';
     if(mode==='offline') { this.source='device'; return {offset:0, source:'device'}; }
-    // Try Binance time endpoint; if fails keep device
-    const base=(this.config.BINANCE_KLINES_BASE||'https://fapi.binance.com/fapi/v1/klines').replace(/\/klines.*$/,'').replace(/\/$/,'');
-    const url= base + '/fapi/v1/time';
-    try{
+    // Try Delta India tickers timestamp first (authoritative exchange time), fallback to Binance
+    const tryFetch = async (url, parser) => {
       const r=await fetch(url, {cache:'no-store'});
       if(!r.ok) throw new Error('time http '+r.status);
       const j=await r.json();
-      const server=Number(j.serverTime);
+      const server=parser(j);
       if(!Number.isFinite(server)) throw new Error('bad serverTime');
       this.offset=server - Date.now();
       this.source='exchange';
       this.lastSync=Date.now();
       try{ localStorage.setItem('delta-paper-time-offset', JSON.stringify({offset:this.offset, at:this.lastSync})); }catch(e){}
       return {offset:this.offset, source:'exchange'};
+    };
+    try{
+      const base=(this.config.BINANCE_KLINES_BASE||'https://fapi.binance.com/fapi/v1/klines').replace(/\/klines.*$/,'').replace(/\/$/,'');
+      // Prefer Delta India time via tickers timestamp (server time approximated)
+      try{
+        const deltaBase=(this.config.API_BASE||'https://api.india.delta.exchange').replace(/\/$/,'');
+        const r=await fetch(deltaBase+'/v2/tickers?contract_types=perpetual_futures', {cache:'no-store'});
+        if(r.ok){
+          const j=await r.json();
+          const tick = j.result && j.result[0];
+          const ts = tick && (Number(tick.timestamp) || Number(tick.time));
+          if(Number.isFinite(ts) && ts>0){
+            const server = ts > 1e12 ? ts : ts > 1e10 ? ts*1000 : ts*1000;
+            // Use server timestamp as sync if recent (within 10s)
+            if(Math.abs(server - Date.now()) < 60000){
+              this.offset=server - Date.now();
+              this.source='exchange';
+              this.lastSync=Date.now();
+              try{ localStorage.setItem('delta-paper-time-offset', JSON.stringify({offset:this.offset, at:this.lastSync})); }catch(e){}
+              return {offset:this.offset, source:'exchange'};
+            }
+          }
+        }
+      }catch(e){}
+      // Fallback Binance time
+      return await tryFetch(base + '/fapi/v1/time', j=>Number(j.serverTime));
     }catch(e){
       // try restore cached
       try{

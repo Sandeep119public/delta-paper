@@ -1,4 +1,4 @@
-const CACHE = 'delta-paper-v10';
+const CACHE = 'delta-paper-v11';
 const CRITICAL_ASSETS = [
   './','./index.html','./manifest.json','./css/styles.css',
   './js/config.js','./js/console.js','./js/EventEmitter.js','./js/Storage.js',
@@ -7,7 +7,7 @@ const CRITICAL_ASSETS = [
   './js/FundingSimulator.js','./js/RiskMetrics.js','./js/KeyboardShortcuts.js',
   './js/VwapIndicator.js','./js/FinancialEngine.js','./js/TradingEngine.js',
   './js/data/ExchangeTime.js','./js/data/DataVerifier.js','./js/data/HistoricalDataStorage.js','./js/data/HistoricalDataProvider.js','./js/data/DataDownloader.js','./js/data/DataDiagnostics.js','./js/data/HistoricalDataManager.js','./js/data/DataManagerUI.js','./js/ChartReplay.js','./js/ChartController.js','./js/services/MarketDataStatus.js',
-  './js/app.js','./js/boot.js'
+  './js/app.js','./js/boot.js','./js/store.js','./js/market.js','./js/OrderEngine.js'
 ];
 const OPTIONAL_ASSETS = [
   './css/ui-refresh.css',
