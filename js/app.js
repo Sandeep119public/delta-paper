@@ -144,18 +144,20 @@ class DeltaPaperApp {
 
     // VWAP indicator
     try {
-      this.vwap = new VwapIndicator(this._tvChart, {
-        showBands: this.config.VIS && this.config.VIS.VWAP_BANDS,
-      });
+      this.vwap = new VwapIndicator(this._tvChart, { showBands: false });
+      // Keep indicators opt-in. A fresh chart must show price action first.
+      this.vwap.toggle(false);
       const vwapBtn = this.$('vwapToggle');
       if (vwapBtn) {
+        vwapBtn.classList.remove('on');
         vwapBtn.addEventListener('click', () => {
           const on = vwapBtn.classList.toggle('on');
           this.vwap.toggle(on);
+          if (on) this.vwap.setData(this._historyCache || []);
         });
       }
     } catch (e) { DELTA_LOGGER.warn('[App] VWAP init failed', e); }
-
+  }
 
   _updateTpSlLines(m) {
     if (!this._tvCandle) return;
